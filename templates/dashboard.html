@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="cards">
+  <div class="card">
+    <div class="card-title">当月总课时</div>
+    <div class="metric">{{ "%.2f"|format(total_hours) }} 小时</div>
+  </div>
+  <div class="card">
+    <div class="card-title">当月总课时费</div>
+    <div class="metric accent">¥ {{ "%.2f"|format(total_fee) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">月份</div>
+    <div class="metric">{{ year }} 年 {{ "%02d"|format(month) }} 月</div>
+  </div>
+</div>
+
+<div class="row" style="justify-content:space-between;align-items:center;margin:.4rem 0">
+  <div class="row">
+    <a class="btn" href="{{ url_for('dashboard', year=prev_year, month=prev_month) }}">« 上个月</a>
+    <a class="btn" href="{{ url_for('dashboard', year=next_year, month=next_month) }}" style="margin-left:.5rem">下个月 »</a>
+  </div>
+  <div class="muted small">点击课程表日历中的某一天可添加/查看排课</div>
+</div>
+
+<div class="row" style="gap:1rem; align-items:flex-start">
+  <div style="flex:1">
+    <h3>课时费（日度汇总）</h3>
+    {% include "_calendar_sessions.html" with context %}
+  </div>
+  <div style="flex:1">
+    <h3>课程表（事件）</h3>
+    {% include "_calendar_lessons.html" with context %}
+  </div>
+</div>
+
+<h3 style="margin-top:1rem">快速添加到课程表</h3>
+<form method="post" action="{{ url_for('add_lesson') }}" class="form inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>学生
+      <select name="student_id" required>
+        {% for stage, items in sidebar_groups %}
+          <optgroup label="{{ stage }}">
+            {% for s in items %}
+              <option value="{{ s.id }}">{{ s.name }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label>日期
+      <input type="date" name="lesson_date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
+    </label>
+    <label>时间
+      <input type="time" name="lesson_time" value="19:00" required>
+    </label>
+    <label>时长(h)
+      <input type="number" name="duration" step="0.25" min="0.25" value="1.0" required>
+    </label>
+    <label>备注
+      <input type="text" name="note" placeholder="可填：课程主题/地点">
+    </label>
+    <button type="submit">添加</button>
+  </form>
+{% endblock %}

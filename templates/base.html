@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ page_title or "学习统计" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+</head>
+<body class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">📘</div>
+      <div class="brand-name">SAPA·S</div>
+    </div>
+    <nav class="menu">
+      <a class="menu-item {% if request.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}">仪表盘</a>
+      <a class="menu-item {% if request.path == '/students' %}active{% endif %}" href="{{ url_for('students') }}">学生列表</a>
+
+      {% for stage, items in sidebar_groups %}
+        <div class="menu-section">{{ stage }}</div>
+        <div class="student-list">
+          {% for s in items %}
+            <a class="student-link {% if request.path.startswith('/students/' + s.id|string) %}active{% endif %}"
+               href="{{ url_for('student_dashboard', sid=s.id) }}">{{ s.name }}</a>
+          {% else %}
+            <div class="muted small">暂无</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+
+      <a class="menu-item subtle" href="{{ url_for('new_student') }}">＋ 添加学生</a>
+    </nav>
+  </aside>
+
+  <main class="main" {% if student is defined %} data-student-id="{{ student.id }}"{% endif %}>
+    <header class="topbar">
+      <div class="title">{{ page_title or "学习统计" }}</div>
+      <div class="topbar-actions">
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <span class="muted small" style="margin-right:.5rem">👤 {{ current_user.username }}</span>
+          <button type="submit" class="btn">退出</button>
+        </form>
+      </div>
+    </header>
+
+    <section class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash">
+            {% for cat, msg in messages %}
+              <div class="flash-item {{ cat }}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+
+  <!-- 日历点击弹层 -->
+  <div id="dayModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <div id="modalTitle" class="modal-title">排课 · <span id="modalDate">2025-01-01</span></div>
+        <button class="modal-close" title="关闭" data-close>×</button>
+      </div>
+
+      <div class="modal-body">
+        <h4>当天课程</h4>
+        <div id="lessonList" class="lesson-list small muted">加载中…</div>
+
+        <h4 style="margin-top:.8rem">新增排课</h4>
+        <form id="lessonForm" method="post" action="{{ url_for('add_lesson') }}" class="form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row">
+            <label style="flex:1">学生
+              <select name="student_id" id="lessonStudent" required>
+                {% for stage, items in sidebar_groups %}
+                  <optgroup label="{{ stage }}">
+                    {% for s in items %}
+                      <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                {% endfor %}
+              </select>
+            </label>
+            <label style="flex:1">日期
+              <input type="date" name="lesson_date" id="lessonDate" required>
+            </label>
+          </div>
+          <div class="row">
+            <label style="flex:1">时间
+              <input type="time" name="lesson_time" value="19:00" required>
+            </label>
+            <label style="flex:1">时长(h)
+              <input type="number" name="duration" step="0.25" min="0.25" value="1.0" required>
+            </label>
+          </div>
+          <label>备注
+            <input type="text" name="note" placeholder="可填：课程主题/地点">
+          </label>
+          <div class="row">
+            <button type="submit">添加</button>
+            <button class="btn" type="button" data-close>关闭</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.PAGE = {
+      studentId: (document.querySelector('main.main')?.dataset?.studentId || null),
+      csrfToken: (document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '')
+    };
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

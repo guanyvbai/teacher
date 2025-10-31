@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ page_title or "登录" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f5f7fb">
+  <div style="width:min(420px,92vw);background:#fff;border:1px solid #e3e8ef;border-radius:1rem;padding:1.25rem;box-shadow:0 10px 25px rgba(0,0,0,.08)">
+    <h2 style="margin:.25rem 0 1rem">登录</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash">
+          {% for cat, msg in messages %}
+            <div class="flash-item {{ cat }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>用户名
+        <input type="text" name="username" required autofocus>
+      </label>
+      <label>密码
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit" style="width:100%">登录</button>
+    </form>
+    <p class="muted small" style="margin-top:.75rem">默认账号：<code>admin</code> / <code>admin123</code>（请在部署时通过环境变量覆盖）</p>
+  </div>
+</body>
+</html>

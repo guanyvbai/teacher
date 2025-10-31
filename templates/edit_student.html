@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑学生</h2>
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>姓名
+    <input type="text" name="name" value="{{ student.name }}" required />
+  </label>
+  <label>小时费率 (¥)
+    <input type="number" name="hourly_rate" step="0.01" min="0" value="{{ "%.2f"|format(student.hourly_rate) }}" required />
+  </label>
+  <label>学期阶段
+    <select name="stage" required>
+      {% for s in STAGE_CHOICES %}
+        <option value="{{ s }}" {% if student.stage == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="row">
+    <button type="submit">保存修改</button>
+    <a class="btn" href="{{ url_for('students') }}">返回列表</a>
+  </div>
+</form>
+{% endblock %}

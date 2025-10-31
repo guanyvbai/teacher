@@ -1,0 +1,51 @@
+<div class="calendar">
+    <div class="calendar-grid">
+      <div class="cal-head">周一</div>
+      <div class="cal-head">周二</div>
+      <div class="cal-head">周三</div>
+      <div class="cal-head">周四</div>
+      <div class="cal-head">周五</div>
+      <div class="cal-head">周六</div>
+      <div class="cal-head">周日</div>
+  
+      {% for week in cal %}
+        {% for cell in week %}
+          {% set d = cell.date %}
+          {% set in_month = cell.in_month %}
+          {% set info = per_day.get(d) %}
+          {% set events = lessons_by_date[d] if lessons_by_date and d in lessons_by_date else [] %}
+          <div class="cal-cell {% if not in_month %}muted-bg{% else %}clickable{% endif %}"
+               {% if in_month %} data-date="{{ d.isoformat() }}" data-clickable{% endif %}>
+            <div class="cal-date">{{ d.day }}</div>
+  
+            {% if in_month and info %}
+              <div class="cal-hours">{{ "%.2f"|format(info.hours) }}h</div>
+              <div class="cal-fee">¥ {{ "%.2f"|format(info.fee) }}</div>
+            {% elif in_month %}
+              <div class="cal-hours">0.00h</div>
+              <div class="cal-fee">¥ 0.00</div>
+            {% else %}
+              <div class="cal-hours"></div>
+              <div class="cal-fee"></div>
+            {% endif %}
+  
+            {% if in_month and events %}
+              <div class="cal-list">
+                {% for l in events[:3] %}
+                  <div class="event {% if l.status!='planned' %}done{% endif %}">
+                    <span class="e-time">{{ l.start_at.strftime("%H:%M") }}</span>
+                    <span class="e-name">{% if l.student %}{{ l.student.name }}{% endif %}</span>
+                    <span class="e-dur">{{ ' · ' + ('%.1f'|format(l.duration_hours)) }}h</span>
+                  </div>
+                {% endfor %}
+                {% if events|length > 3 %}
+                  <div class="event-more">+{{ events|length - 3 }} 条</div>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  

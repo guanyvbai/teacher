@@ -1,0 +1,37 @@
+<div class="timetable">
+    <div class="timetable-grid">
+      {% for day in week_days %}
+        <div class="timetable-col">
+          <div class="timetable-col-head">
+            <div class="timetable-col-date">{{ day.strftime("%m/%d") }}</div>
+            <div class="timetable-col-week">{{ ["一","二","三","四","五","六","日"][day.weekday()] }}</div>
+          </div>
+          <div class="timetable-items">
+            {% set items = lessons_by_day.get(day, []) %}
+            {% if items %}
+              {% for l in items %}
+                <div class="timetable-item {% if l.status!='planned' %}done{% endif %}">
+                  <div class="ti-time">{{ l.start_at.strftime("%H:%M") }} · {{ "%.2f"|format(l.duration_hours) }}h</div>
+                  <div class="ti-name">{{ l.student.name }}</div>
+                  {% if l.note %}<div class="ti-note">{{ l.note }}</div>{% endif %}
+                  <div class="ti-actions">
+                    {% if l.status == 'planned' %}
+                      <form method="post" action="{{ url_for('lesson_done', lid=l.id) }}" style="display:inline">
+                        <button type="submit" class="btn small">完成</button>
+                      </form>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('lesson_delete', lid=l.id) }}" style="display:inline" onsubmit="return confirm('删除这条排课？');">
+                      <button type="submit" class="danger small">删除</button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="muted small" style="padding:.4rem .2rem;">暂无</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  

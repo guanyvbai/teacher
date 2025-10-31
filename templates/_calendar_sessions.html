@@ -1,0 +1,33 @@
+<div class="calendar">
+    <div class="calendar-grid">
+      <div class="cal-head">周一</div>
+      <div class="cal-head">周二</div>
+      <div class="cal-head">周三</div>
+      <div class="cal-head">周四</div>
+      <div class="cal-head">周五</div>
+      <div class="cal-head">周六</div>
+      <div class="cal-head">周日</div>
+  
+      {% for week in cal %}
+        {% for cell in week %}
+          {% set d = cell.date %}
+          {% set in_month = cell.in_month %}
+          {% set info = per_day.get(d) %}
+          <div class="cal-cell {% if not in_month %}muted-bg{% endif %}">
+            <div class="cal-date">{{ d.day }}</div>
+            {% if in_month and info %}
+              <div class="cal-hours">{{ "%.2f"|format(info.hours) }}h</div>
+              <div class="cal-fee">¥ {{ "%.2f"|format(info.fee) }}</div>
+            {% elif in_month %}
+              <div class="cal-hours">0.00h</div>
+              <div class="cal-fee">¥ 0.00</div>
+            {% else %}
+              <div class="cal-hours"></div>
+              <div class="cal-fee"></div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+  

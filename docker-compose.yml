@@ -1,0 +1,24 @@
+
+
+services:
+  web:
+    build: .
+    container_name: student_tracker_web
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=sqlite:////data/app.db
+      - SECRET_KEY=PVLEisUey6x4
+      - ADMIN_USER=admin
+      - ADMIN_PASS=Yuan040531
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  app_data:

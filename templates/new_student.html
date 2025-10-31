@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>添加学生</h2>
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>姓名
+    <input type="text" name="name" required />
+  </label>
+  <label>小时费率 (¥)
+    <input type="number" name="hourly_rate" step="0.01" min="0" value="100" required />
+  </label>
+  <label>学期阶段
+    <select name="stage" required>
+      {% for s in STAGE_CHOICES %}
+        <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">保存</button>
+</form>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} 的月统计{% endblock %}
+{% block content %}
+<div class="row between">
+  <h2>{{ student.name }} 的月视图（{{ year }}年{{ "%02d"|format(month) }}月）</h2>
+  <div>
+    <a class="btn" href="{{ url_for('student_month', sid=student.id, year=prev_year, month=prev_month) }}">« 上个月</a>
+    <a class="btn" href="{{ url_for('student_month', sid=student.id, year=next_year, month=next_month) }}">下个月 »</a>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-title">当月总课时</div>
+    <div class="metric">{{ "%.2f"|format(total_hours) }} 小时</div>
+  </div>
+  <div class="card">
+    <div class="card-title">小时费率</div>
+    <div class="metric">¥ {{ "%.2f"|format(student.hourly_rate) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">当月课时费</div>
+    <div class="metric accent">¥ {{ "%.2f"|format(total_fee) }}</div>
+  </div>
+</div>
+
+<h3>按天统计</h3>
+<table class="table small">
+  <thead><tr><th>日期</th><th>课时</th></tr></thead>
+  <tbody>
+    {% for day, hours in by_day.items() %}
+      <tr>
+        <td>{{ year }}-{{ "%02d"|format(month) }}-{{ "%02d"|format(day) }}</td>
+        <td>{{ "%.2f"|format(hours) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>课时明细</h3>
+<table class="table">
+  <thead><tr><th>日期</th><th>课时</th><th>操作</th></tr></thead>
+  <tbody>
+    {% for s in sessions %}
+    <tr>
+      <td>{{ s.date }}</td>
+      <td>{{ "%.2f"|format(s.hours) }}</td>
+      <td>
+        <form method="post" action="{{ url_for('delete_session', sid=s.id) }}" onsubmit="return confirm('确定删除这条记录吗？');">
+          <button type="submit" class="danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="muted">本月暂无记录</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>添加课时</h3>
+<form method="post" action="{{ url_for('add_session', sid=student.id) }}" class="form inline">
+  <label>日期
+    <input type="date" name="date" value="{{ (year|string) + '-' + ('%02d'|format(month)) + '-01' }}" required>
+  </label>
+  <label>课时（小时）
+    <input type="number" name="hours" step="0.25" min="0.25" value="1.0" required>
+  </label>
+  <button type="submit">添加</button>
+</form>
+{% endblock %}

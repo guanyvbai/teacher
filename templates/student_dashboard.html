@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="cards">
+  <div class="card">
+    <div class="card-title">学生</div>
+    <div class="metric">{{ student.name }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">当月总课时</div>
+    <div class="metric">{{ "%.2f"|format(total_hours) }} 小时</div>
+  </div>
+  <div class="card">
+    <div class="card-title">当月课时费</div>
+    <div class="metric accent">¥ {{ "%.2f"|format(total_fee) }}</div>
+  </div>
+</div>
+
+<div class="row" style="justify-content:space-between;align-items:center;margin:.4rem 0">
+  <div class="row">
+    <a class="btn" href="{{ url_for('student_dashboard', sid=student.id, year=prev_year, month=prev_month) }}">« 上个月</a>
+    <a class="btn" href="{{ url_for('student_dashboard', sid=student.id, year=next_year, month=next_month) }}" style="margin-left:.5rem">下个月 »</a>
+  </div>
+  <div class="muted small">右侧日历可点击某一天，弹出排课对话框（学生已自动锁定为 {{ student.name }}）</div>
+</div>
+
+<div class="row" style="gap:1rem; align-items:flex-start">
+  <div style="flex:1">
+    <h3>课时费（日度汇总）</h3>
+    {# 使用与首页相同的“课时费日历”片段；此处的 per_day 是该生专属 #}
+    {% include "_calendar_sessions.html" with context %}
+  </div>
+  <div style="flex:1">
+    <h3>课程表（事件）</h3>
+    {# 使用与首页相同的“课程表日历”片段；此处的 lessons_by_date 已按该生过滤 #}
+    {% include "_calendar_lessons.html" with context %}
+  </div>
+</div>
+
+<h3 style="margin-top:1rem">课时明细（本月）</h3>
+<table class="table">
+    <thead><tr><th>日期</th><th>课时</th><th>费用</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.date }}</td>
+        <td>{{ "%.2f"|format(s.hours) }}</td>
+        <td>¥ {{ "%.2f"|format(s.hours * student.hourly_rate) }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_session', sid=s.id) }}" onsubmit="return confirm('确定删除这条记录吗？');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="danger">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">本月暂无记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  <h3>添加课时</h3>
+  <form method="post" action="{{ url_for('add_session', sid=student.id) }}" class="form inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>日期
+      <input type="date" name="date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
+    </label>
+    <label>课时（小时）
+      <input type="number" name="hours" step="0.25" min="0.25" value="1.0" required>
+    </label>
+    <button type="submit">添加</button>
+  </form>
+
+{% endblock %}
