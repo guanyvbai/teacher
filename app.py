@@ -79,18 +79,16 @@ class Lesson(db.Model):
     status = db.Column(db.String(20), nullable=False, default="planned")  # planned/done
 
 # ---------- 工具 ----------
-def lesson_overlaps(student_id: int, start_at: datetime, duration_hours: float, exclude_lid: int | None = None):
+def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: int | None = None):
     """
-    返回与给定时段冲突的 Lesson 列表（同一学生）。
-    冲突判定： [start, end) 与现有 [s, e) 区间有交集即为冲突。
+    跨学生检测冲突：同一老师同一时间只能上一节课。
+    判定： [start, end) 与现有 [s, e) 区间有交集。
     """
     end_at = start_at + timedelta(hours=duration_hours)
-    # 只查当天的条目即可（性能好、足够覆盖）
     day_start = datetime.combine(start_at.date(), datetime.min.time())
     day_end = day_start + timedelta(days=1)
 
     q = (Lesson.query
-         .filter(Lesson.student_id == student_id)
          .filter(Lesson.start_at >= day_start, Lesson.start_at < day_end))
     if exclude_lid:
         q = q.filter(Lesson.id != exclude_lid)
@@ -98,7 +96,6 @@ def lesson_overlaps(student_id: int, start_at: datetime, duration_hours: float, 
     conflicts = []
     for l in q.all():
         l_end = l.start_at + timedelta(hours=l.duration_hours)
-        # 两区间有交集： !(new_end <= old_start or new_start >= old_end)
         if not (end_at <= l.start_at or start_at >= l_end):
             conflicts.append(l)
     return conflicts
@@ -450,7 +447,11 @@ def create_app():
     @login_required
     def add_lesson():
         try:
-            student_id = int(request.form["student_id"])
+            student_id_raw = request.form.get("student_id", "").strip()
+            if not student_id_raw:
+                raise ValueError("missing student_id")
+            student_id = int(student_id_raw)
+
             date_str = request.form["lesson_date"]
             time_str = request.form["lesson_time"]
             duration = float(request.form["duration"])
@@ -459,18 +460,18 @@ def create_app():
             if duration <= 0:
                 raise ValueError("duration must be positive")
         except Exception:
-            flash("请正确填写课程表信息（日期/时间/时长）", "error")
+            flash("请正确填写课程表信息（学生/日期/时间/时长）", "error")
             return redirect(url_for("dashboard"))
 
-        # ✅ 冲突硬校验
-        conflicts = lesson_overlaps(student_id, start_at, duration)
+        # ✅ 跨学生冲突硬校验
+        conflicts = lesson_overlaps_any(start_at, duration)
         if conflicts:
-            # 组织可读信息，例如：10/31 19:00-20:30（已排）
             human = []
             for c in conflicts:
                 c_end = c.start_at + timedelta(hours=c.duration_hours)
-                human.append(f"{c.start_at.strftime('%m/%d %H:%M')}-{c_end.strftime('%H:%M')}")
-            flash(f"排课时间与已有安排冲突：{'; '.join(human)}", "error")
+                who = c.student.name if c.student else "未知学生"
+                human.append(f"{who}：{c.start_at.strftime('%m/%d %H:%M')}-{c_end.strftime('%H:%M')}")
+            flash(f"排课与以下安排冲突：{'; '.join(human)}", "error")
             return redirect(url_for("dashboard", year=start_at.year, month=start_at.month))
 
         db.session.add(Lesson(student_id=student_id, start_at=start_at, duration_hours=duration, note=note))
@@ -549,25 +550,28 @@ def create_app():
     @login_required
     def api_check_conflict():
         """
-        GET /api/lessons/check_conflict?student_id=1&date=YYYY-MM-DD&time=HH:MM&duration=1.5
-        返回 { ok: True, conflicts: [{start:"HH:MM", end:"HH:MM"}...] }
+        GET /api/lessons/check_conflict?date=YYYY-MM-DD&time=HH:MM&duration=1.5
+        返回 { ok: True, conflicts: [{student:"张三", start:"HH:MM", end:"HH:MM"}...] }
         """
         try:
-            student_id = int(request.args.get("student_id", "0"))
             date_str = request.args.get("date", "")
             time_str = request.args.get("time", "")
             duration = float(request.args.get("duration", "0"))
-            if not (student_id and date_str and time_str and duration > 0):
+            if not (date_str and time_str and duration > 0):
                 return jsonify({"ok": False, "error": "missing params"}), 400
             start_at = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
         except Exception:
             return jsonify({"ok": False, "error": "bad params"}), 400
 
-        conflicts = lesson_overlaps(student_id, start_at, duration)
+        conflicts = lesson_overlaps_any(start_at, duration)
         items = []
         for c in conflicts:
             ce = c.start_at + timedelta(hours=c.duration_hours)
-            items.append({"start": c.start_at.strftime("%H:%M"), "end": ce.strftime("%H:%M")})
+            items.append({
+                "student": c.student.name if c.student else "",
+                "start": c.start_at.strftime("%H:%M"),
+                "end": ce.strftime("%H:%M")
+            })
         return jsonify({"ok": True, "conflicts": items})
         
     return app

@@ -7,27 +7,29 @@
       const modal = $('#dayModal');
       $('#modalDate').textContent = dateStr;
       $('#lessonDate').value = dateStr;
-  
+    
       const sid = window.PAGE?.studentId;
       const studentSelect = $('#lessonStudent');
+      const studentHidden = $('#lessonStudentHidden');
+    
       if (sid) {
         studentSelect.value = sid;
-        studentSelect.disabled = true;
+        studentSelect.disabled = true;          // 锁定下拉
+        if (studentHidden) studentHidden.value = sid; // ✅ 确保表单能提交 student_id
       } else {
         studentSelect.disabled = false;
+        if (studentHidden) studentHidden.value = studentSelect.value || '';
       }
-  
+    
+      // 如果用户在首页修改了下拉的学生，顺手同步隐藏域
+      studentSelect.addEventListener('change', () => {
+        if (studentHidden) studentHidden.value = studentSelect.value || '';
+      }, { once: true });
+    
       loadLessons(dateStr, sid);
-  
+    
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
-    }
-  
-    function closeModal() {
-      const modal = $('#dayModal');
-      modal.classList.add('hidden');
-      modal.setAttribute('aria-hidden', 'true');
-      $('#lessonList').innerHTML = '<span class="muted small">加载中…</span>';
     }
   
     async function loadLessons(dateStr, sid) {
@@ -99,18 +101,14 @@
       const form = document.getElementById('lessonForm');
       if (!form) return;
       form.addEventListener('submit', async (e) => {
-        // 取参数
-        const studentId = document.getElementById('lessonStudent')?.value;
         const dateStr   = document.getElementById('lessonDate')?.value;
         const timeStr   = form.querySelector('input[name="lesson_time"]')?.value;
         const duration  = form.querySelector('input[name="duration"]')?.value;
     
-        // 参数不全就让后端报错
-        if (!studentId || !dateStr || !timeStr || !duration) return;
+        if (!dateStr || !timeStr || !duration) return;
     
         try {
           const url = new URL('/api/lessons/check_conflict', window.location.origin);
-          url.searchParams.set('student_id', studentId);
           url.searchParams.set('date', dateStr);
           url.searchParams.set('time', timeStr);
           url.searchParams.set('duration', duration);
@@ -119,17 +117,19 @@
           const data = await res.json();
     
           if (data && data.ok && data.conflicts && data.conflicts.length > 0) {
-            const list = data.conflicts.map(c => `${c.start}-${c.end}`).join('；');
-            const ok = window.confirm(`该时段与已排课程冲突：${list}\n\n确定仍然提交吗？`);
+            const list = data.conflicts.map(c => `${c.student ? (c.student + '：') : ''}${c.start}-${c.end}`).join('；');
+            const ok = window.confirm(`该时段已被占用：${list}\n\n确定仍然提交吗？`);
             if (!ok) {
               e.preventDefault();
               e.stopPropagation();
             }
           }
-          // 若无冲突，则正常提交
         } catch (err) {
-          // 预检失败不阻塞提交，交给后端硬校验兜底
-          console.warn('conflict precheck failed:', err);
+          const go = window.confirm('无法完成冲突预检，是否仍然提交？（后端会再次检验）');
+          if (!go) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
         }
       }, { capture: true });
     }
