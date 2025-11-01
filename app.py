@@ -22,7 +22,18 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "login"   # 未登录时重定向到 /login
 
-STAGE_CHOICES = ["初一", "初二", "初三", "高一", "高二", "高三","其他"]
+STAGE_CHOICES = [
+    "小学",
+    "初一",
+    "初二",
+    "初三",
+    "初中",
+    "高一",
+    "高二",
+    "高三",
+    "高中",
+    "其他",
+]
 
 # ---------- 模型 ----------
 def bootstrap_db_once():

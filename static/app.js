@@ -3,6 +3,13 @@
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
     const CSRF = (window.PAGE && window.PAGE.csrfToken) || '';
   
+    function closeModal() {
+      const modal = $('#dayModal');
+      if (!modal) return;
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
     function openModal(dateStr) {
       const modal = $('#dayModal');
       $('#modalDate').textContent = dateStr;
@@ -88,7 +95,10 @@
     }
   
     function bindModalClose() {
-      $$('#dayModal [data-close]').forEach(el => el.addEventListener('click', closeModal));
+      $$('#dayModal [data-close]').forEach(el => el.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        closeModal();
+      }));
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
     }
   
