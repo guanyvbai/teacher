@@ -44,7 +44,7 @@
       <div class="topbar-actions">
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <span class="muted small" style="margin-right:.5rem">👤 {{ current_user.username }} · {{ PERMS.role or '未设置角色' }}</span>
+          <span class="muted small" style="margin-right:.5rem">👤 {{ current_user.username }} · {{ PERMS.role_label or '未设置角色' }}</span>
           <button type="submit" class="btn">退出</button>
         </form>
       </div>

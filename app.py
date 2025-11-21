@@ -30,10 +30,11 @@ ROLE_ADMIN = "admin"
 ROLE_VIEWER = "viewer"
 ROLE_CHOICES = [
     (ROLE_SUPERADMIN, "超级管理员（全部权限，可管理账号）"),
-    (ROLE_TEACHER, "老师/管理员（全部业务权限）"),
+    (ROLE_TEACHER, "老师（全部业务权限）"),
     (ROLE_ADMIN, "管理员（仅学生/课时/报表）"),
     (ROLE_VIEWER, "家长展示账号（只读）"),
 ]
+ROLE_LABELS = dict(ROLE_CHOICES)
 
 # ---------- 模型 ----------
 def bootstrap_db_once():
@@ -121,6 +122,7 @@ def _permissions(user):
     readonly = role == ROLE_VIEWER
     return {
         "role": role,
+        "role_label": ROLE_LABELS.get(role, role or "未知角色"),
         "manage_users": can_manage_users,
         "manage_students": can_manage_students,
         "manage_sessions": can_sessions,
@@ -191,11 +193,11 @@ def ensure_admin_user():
     """
     首次启动时创建管理员用户：
     环境变量:
-      ADMIN_USER (默认: admin)
-      ADMIN_PASS (默认: admin123  —— 上线时请务必改掉！)
+      ADMIN_USER (默认: master)
+      ADMIN_PASS (默认: master123  —— 上线时请务必改掉！)
     """
-    username = os.getenv("ADMIN_USER", "admin")
-    password = os.getenv("ADMIN_PASS", "admin123")
+    username = os.getenv("ADMIN_USER", "master")
+    password = os.getenv("ADMIN_PASS", "master123")
     u = User.query.filter_by(username=username).first()
     if not u:
         u = User(username=username, role=ROLE_SUPERADMIN)
@@ -237,7 +239,7 @@ def create_app():
     login_manager.init_app(app)
 
     with app.app_context():
-            bootstrap_db_once()
+        bootstrap_db_once()
 
     # 全局：侧边栏分组学生 + 注入 csrf_token
     @app.context_processor
@@ -250,6 +252,7 @@ def create_app():
             "csrf_token": _get_or_make_csrf_token,
             "PERMS": perms,
             "ROLE_CHOICES": ROLE_CHOICES,
+            "ROLE_LABELS": ROLE_LABELS,
         }
 
     # 请求计时 + CSRF 保护（白名单放行）
