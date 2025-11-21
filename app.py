@@ -23,7 +23,10 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "login"   # 未登录时重定向到 /login
 
-STAGE_CHOICES = ["初一", "初二", "初三", "高一", "高二", "高三", "其他"]
+STAGE_CHOICES = ["其他", "初一", "初二", "初三", "高一", "高二", "高三"]
+LESSON_STATUS_PLANNED = "planned"
+LESSON_STATUS_DONE = "done"
+LESSON_STATUS_CANCELLED = "cancelled"
 ROLE_SUPERADMIN = "superadmin"
 ROLE_TEACHER = "teacher"
 ROLE_ADMIN = "admin"
@@ -48,6 +51,8 @@ def bootstrap_db_once():
         try:
             db.create_all()
             ensure_stage_column()
+            ensure_session_columns()
+            ensure_lesson_status_column()
             ensure_admin_user()
             seed_if_empty()
         finally:
@@ -81,6 +86,11 @@ class Session(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey("student.id"), nullable=False, index=True)
     date = db.Column(db.Date, nullable=False, index=True)
     hours = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    lesson_id = db.Column(db.Integer, db.ForeignKey("lesson.id"), nullable=True, index=True)
+    absent = db.Column(db.Boolean, nullable=False, default=False)
+    content = db.Column(db.String(255), nullable=False, default="")
+    feedback = db.Column(db.Text, nullable=True)
 
 class Lesson(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -88,7 +98,7 @@ class Lesson(db.Model):
     start_at = db.Column(db.DateTime, nullable=False, index=True)
     duration_hours = db.Column(db.Float, nullable=False, default=1.0)
     note = db.Column(db.String(200), nullable=False, default="")
-    status = db.Column(db.String(20), nullable=False, default="planned")  # planned/done
+    status = db.Column(db.String(20), nullable=False, default=LESSON_STATUS_PLANNED)  # planned/done/cancelled
 
 # ---------- 工具 ----------
 def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: int | None = None):
@@ -101,7 +111,8 @@ def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: 
     day_end = day_start + timedelta(days=1)
 
     q = (Lesson.query
-         .filter(Lesson.start_at >= day_start, Lesson.start_at < day_end))
+         .filter(Lesson.start_at >= day_start, Lesson.start_at < day_end)
+         .filter(Lesson.status != LESSON_STATUS_CANCELLED))
     if exclude_lid:
         q = q.filter(Lesson.id != exclude_lid)
 
@@ -189,6 +200,41 @@ def ensure_stage_column():
         db.session.execute(text("ALTER TABLE student ADD COLUMN stage VARCHAR(50) NOT NULL DEFAULT '其他'"))
         db.session.commit()
 
+
+def ensure_session_columns():
+    info = db.session.execute(text("PRAGMA table_info('session')")).fetchall()
+    cols = [row[1] for row in info]
+    altered = False
+    if "created_at" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"))
+        altered = True
+    if "lesson_id" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN lesson_id INTEGER"))
+        altered = True
+    if "absent" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN absent INTEGER NOT NULL DEFAULT 0"))
+        altered = True
+    if "content" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN content VARCHAR(255) NOT NULL DEFAULT ''"))
+        altered = True
+    if "feedback" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN feedback TEXT"))
+        altered = True
+    if altered:
+        db.session.commit()
+    db.session.execute(text("UPDATE session SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)"))
+    db.session.execute(text("UPDATE session SET absent = COALESCE(absent, 0)"))
+    db.session.execute(text("UPDATE session SET content = COALESCE(content, '')"))
+    db.session.commit()
+
+
+def ensure_lesson_status_column():
+    info = db.session.execute(text("PRAGMA table_info('lesson')")).fetchall()
+    cols = [row[1] for row in info]
+    if "status" not in cols:
+        db.session.execute(text("ALTER TABLE lesson ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'planned'"))
+        db.session.commit()
+
 def ensure_admin_user():
     """
     首次启动时创建管理员用户：
@@ -205,6 +251,58 @@ def ensure_admin_user():
         db.session.add(u)
         db.session.commit()
         print(f"[INIT] Created admin user: {username}  (请尽快修改密码)")
+
+
+def ensure_due_lessons_recorded(now: datetime | None = None):
+    """自动把已结束的排课转为课时记录，并标记状态为 done。"""
+    now = now or datetime.now()
+    planned = Lesson.query.filter(Lesson.status == LESSON_STATUS_PLANNED, Lesson.start_at <= now).all()
+    changed = False
+    for l in planned:
+        end_at = l.start_at + timedelta(hours=l.duration_hours)
+        if end_at > now:
+            continue
+        sess = Session.query.filter_by(lesson_id=l.id).first()
+        if not sess:
+            sess = Session(
+                student_id=l.student_id,
+                date=l.start_at.date(),
+                hours=float(l.duration_hours),
+                lesson_id=l.id,
+                absent=False,
+            )
+            db.session.add(sess)
+        l.status = LESSON_STATUS_DONE
+        changed = True
+    if changed:
+        db.session.commit()
+
+
+def is_session_editable(sess: Session) -> bool:
+    created = sess.created_at or datetime.utcnow()
+    return datetime.utcnow() - created <= timedelta(hours=24)
+
+
+def ensure_session_for_lesson(lesson: Lesson):
+    sess = Session.query.filter_by(lesson_id=lesson.id).first()
+    if sess:
+        sess.hours = float(lesson.duration_hours)
+        sess.absent = False
+        sess.date = lesson.start_at.date()
+    else:
+        db.session.add(Session(
+            student_id=lesson.student_id,
+            date=lesson.start_at.date(),
+            hours=float(lesson.duration_hours),
+            lesson_id=lesson.id,
+            absent=False,
+        ))
+
+
+def remove_session_for_lesson(lesson: Lesson):
+    sess = Session.query.filter_by(lesson_id=lesson.id).first()
+    if sess:
+        db.session.delete(sess)
 
 # ---- 简易 CSRF（对所有 POST 生效） ----
 def _csrf_ensure():
@@ -253,6 +351,7 @@ def create_app():
             "PERMS": perms,
             "ROLE_CHOICES": ROLE_CHOICES,
             "ROLE_LABELS": ROLE_LABELS,
+            "is_session_editable": is_session_editable,
         }
 
     # 请求计时 + CSRF 保护（白名单放行）
@@ -270,6 +369,7 @@ def create_app():
         if current_user.is_authenticated and current_user.role == ROLE_VIEWER:
             if request.method == "POST" and request.path not in {"/logout"}:
                 abort(403)
+        ensure_due_lessons_recorded()
 
     @app.after_request
     def _toc(resp):
@@ -431,6 +531,37 @@ def create_app():
             page_title="本月总览：课时费 & 课程表"
         )
 
+    @app.route("/parent/schedule")
+    @login_required
+    def parent_schedule():
+        year, month = _get_year_month()
+        cal = build_calendar(year, month)
+        start_m, end_m = month_bounds(year, month)
+        lessons = (Lesson.query.join(Student)
+                   .filter(Lesson.start_at >= datetime.combine(start_m, datetime.min.time()))
+                   .filter(Lesson.start_at < datetime.combine(end_m, datetime.min.time()))
+                   .order_by(Lesson.start_at.asc()).all())
+        lessons_by_date = {}
+        for l in lessons:
+            d = l.start_at.date()
+            lessons_by_date.setdefault(d, []).append(l)
+
+        upcoming = (Lesson.query.join(Student)
+                    .filter(Lesson.start_at >= datetime.combine(date.today(), datetime.min.time()))
+                    .order_by(Lesson.start_at.asc()).limit(50).all())
+
+        prev = start_m - relativedelta(months=1)
+        nextm = start_m + relativedelta(months=1)
+        return render_template(
+            "parent_schedule.html",
+            year=year, month=month, cal=cal,
+            lessons_by_date=lessons_by_date,
+            prev_year=prev.year, prev_month=prev.month,
+            next_year=nextm.year, next_month=nextm.month,
+            upcoming=upcoming,
+            page_title="家长端：排课规划"
+        )
+
     # ---- 学生页：双日历（需登录） ----
     @app.route("/students/<int:sid>")
     @login_required
@@ -558,15 +689,25 @@ def create_app():
         student = Student.query.get_or_404(sid)
         date_str = request.form.get("date")
         hours_str = request.form.get("hours")
+        content = request.form.get("content", "").strip()
+        feedback = request.form.get("feedback", "").strip()
+        absent = bool(request.form.get("absent"))
         try:
             d = datetime.strptime(date_str, "%Y-%m-%d").date()
             h = float(hours_str)
-            if h <= 0:
+            if h <= 0 and not absent:
                 raise ValueError("hours must be positive")
         except Exception:
             flash("请提供正确的日期与课时（正数）", "error")
             return redirect(url_for("student_dashboard", sid=sid))
-        db.session.add(Session(student_id=student.id, date=d, hours=h))
+        db.session.add(Session(
+            student_id=student.id,
+            date=d,
+            hours=(0 if absent else h),
+            absent=absent,
+            content=content,
+            feedback=feedback,
+        ))
         db.session.commit()
         flash("课时记录已添加", "ok")
         return redirect(url_for("student_dashboard", sid=sid, year=d.year, month=d.month))
@@ -582,6 +723,36 @@ def create_app():
         db.session.commit()
         flash("记录已删除", "ok")
         return redirect(url_for("student_dashboard", sid=stid, year=y, month=m))
+
+    @app.route("/sessions/<int:sid>/edit", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def edit_session(sid):
+        sess = Session.query.get_or_404(sid)
+        student = sess.student
+        if not is_session_editable(sess):
+            flash("超过24小时，无法修改课时，可删除后重新登记", "error")
+            return redirect(url_for("student_dashboard", sid=student.id))
+        if request.method == "POST":
+            hours_raw = request.form.get("hours", "").strip()
+            absent = bool(request.form.get("absent"))
+            content = request.form.get("content", "").strip()
+            feedback = request.form.get("feedback", "").strip()
+            try:
+                h = float(hours_raw or 0)
+                if h <= 0 and not absent:
+                    raise ValueError("hours must be positive")
+            except Exception:
+                flash("课时需为正数", "error")
+                return render_template("edit_session.html", session=sess, student=student, page_title="编辑课时")
+            sess.hours = 0 if absent else h
+            sess.absent = absent
+            sess.content = content
+            sess.feedback = feedback
+            db.session.commit()
+            flash("课时记录已更新", "ok")
+            return redirect(url_for("student_dashboard", sid=student.id, year=sess.date.year, month=sess.date.month))
+        return render_template("edit_session.html", session=sess, student=student, page_title="编辑课时")
 
     # ---- 课程表 Lesson（需登录） ----
     @app.route("/lessons/add", methods=["POST"])
@@ -621,28 +792,112 @@ def create_app():
         flash("已添加到课程表", "ok")
         return redirect(url_for("dashboard", year=start_at.year, month=start_at.month))
 
+    @app.route("/lessons/<int:lid>/edit", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
+    def lesson_edit(lid):
+        lesson = Lesson.query.get_or_404(lid)
+        if request.method == "POST":
+            date_str = request.form.get("lesson_date", "")
+            time_str = request.form.get("lesson_time", "")
+            duration_raw = request.form.get("duration", "")
+            note = request.form.get("note", "").strip()
+            status = request.form.get("status", LESSON_STATUS_PLANNED)
+            try:
+                start_at = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                duration = float(duration_raw)
+                if duration <= 0:
+                    raise ValueError("duration must be positive")
+                if status not in {LESSON_STATUS_PLANNED, LESSON_STATUS_DONE, LESSON_STATUS_CANCELLED}:
+                    raise ValueError("bad status")
+            except Exception:
+                flash("请正确填写排课信息", "error")
+                return render_template("edit_lesson.html", lesson=lesson, page_title="编辑排课")
+
+            conflicts = lesson_overlaps_any(start_at, duration, exclude_lid=lesson.id)
+            if conflicts and status != LESSON_STATUS_CANCELLED:
+                human = []
+                for c in conflicts:
+                    c_end = c.start_at + timedelta(hours=c.duration_hours)
+                    who = c.student.name if c.student else "未知学生"
+                    human.append(f"{who}：{c.start_at.strftime('%m/%d %H:%M')}-{c_end.strftime('%H:%M')}")
+                flash(f"排课与以下安排冲突：{'; '.join(human)}", "error")
+                return render_template("edit_lesson.html", lesson=lesson, page_title="编辑排课")
+
+            lesson.start_at = start_at
+            lesson.duration_hours = duration
+            lesson.note = note
+            lesson.status = status
+
+            if status == LESSON_STATUS_DONE:
+                ensure_session_for_lesson(lesson)
+            elif status == LESSON_STATUS_CANCELLED:
+                remove_session_for_lesson(lesson)
+            else:
+                remove_session_for_lesson(lesson)
+            db.session.commit()
+            flash("排课已更新", "ok")
+            return redirect(url_for("dashboard", year=start_at.year, month=start_at.month))
+        return render_template("edit_lesson.html", lesson=lesson, page_title="编辑排课")
+
+    @app.route("/lessons/<int:lid>/copy", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
+    def lesson_copy(lid):
+        lesson = Lesson.query.get_or_404(lid)
+        mode = request.form.get("repeat_mode", "weekly")
+        count = request.form.get("repeat_count", type=int) or 0
+        interval_days = request.form.get("repeat_every", type=int) or 7
+        if count <= 0:
+            flash("请输入正确的复制次数", "error")
+            return redirect(url_for("lesson_edit", lid=lid))
+        created = skipped = 0
+        for i in range(1, count + 1):
+            delta_days = 7 * i if mode == "weekly" else interval_days * i
+            new_start = lesson.start_at + timedelta(days=delta_days)
+            if lesson_overlaps_any(new_start, lesson.duration_hours):
+                skipped += 1
+                continue
+            db.session.add(Lesson(
+                student_id=lesson.student_id,
+                start_at=new_start,
+                duration_hours=lesson.duration_hours,
+                note=lesson.note,
+                status=LESSON_STATUS_PLANNED,
+            ))
+            created += 1
+        db.session.commit()
+        msg = f"已复制 {created} 条排课"
+        if skipped:
+            msg += f"（有 {skipped} 条因冲突被跳过）"
+        flash(msg, "ok")
+        return redirect(url_for("lesson_edit", lid=lid))
+
     @app.route("/lessons/<int:lid>/done", methods=["POST"])
     @login_required
     @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def lesson_done(lid):
         l = Lesson.query.get_or_404(lid)
         y, m = l.start_at.year, l.start_at.month
-        if l.status != "done":
-            lesson_date = l.start_at.date()
-            existing = (Session.query
-                        .filter_by(student_id=l.student_id, date=lesson_date)
-                        .first())
-            if existing:
-                existing.hours = float(existing.hours) + float(l.duration_hours)
-            else:
-                db.session.add(Session(
-                    student_id=l.student_id, date=lesson_date, hours=float(l.duration_hours)
-                ))
-            l.status = "done"
+        if l.status != LESSON_STATUS_DONE:
+            ensure_session_for_lesson(l)
+            l.status = LESSON_STATUS_DONE
             db.session.commit()
             flash("已标记完成，并记入当日课时", "ok")
         else:
             flash("该排课已完成（跳过重复记账）", "ok")
+        return redirect(url_for("dashboard", year=y, month=m))
+
+    @app.route("/lessons/<int:lid>/cancel", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
+    def lesson_cancel(lid):
+        l = Lesson.query.get_or_404(lid)
+        y, m = l.start_at.year, l.start_at.month
+        l.status = LESSON_STATUS_CANCELLED
+        remove_session_for_lesson(l)
+        db.session.commit()
+        flash("排课已取消", "ok")
         return redirect(url_for("dashboard", year=y, month=m))
 
     @app.route("/lessons/<int:lid>/delete", methods=["POST"])
@@ -651,6 +906,7 @@ def create_app():
     def lesson_delete(lid):
         l = Lesson.query.get_or_404(lid)
         y, m = l.start_at.year, l.start_at.month
+        remove_session_for_lesson(l)
         db.session.delete(l)
         db.session.commit()
         flash("已从课程表删除", "ok")

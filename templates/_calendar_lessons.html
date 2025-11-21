@@ -20,10 +20,14 @@
             {% if in_month and events %}
               <div class="cal-list">
                 {% for l in events[:3] %}
-                  <div class="event {% if l.status!='planned' %}done{% endif %}">
+                  {% set cls = 'done' if l.status=='done' else ('cancelled' if l.status=='cancelled' else '') %}
+                  <div class="event {{ cls }}">
                     <span class="e-time">{{ l.start_at.strftime("%H:%M") }}</span>
                     <span class="e-name">{% if l.student %}{{ l.student.name }}{% endif %}</span>
                     <span class="e-dur">{{ ' · ' + ('%.1f'|format(l.duration_hours)) }}h</span>
+                    {% if l.status != 'planned' %}
+                      <span class="badge">{{ '已完成' if l.status=='done' else '已取消' }}</span>
+                    {% endif %}
                   </div>
                 {% endfor %}
                 {% if events|length > 3 %}
