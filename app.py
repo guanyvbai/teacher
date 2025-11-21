@@ -86,6 +86,7 @@ class Session(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey("student.id"), nullable=False, index=True)
     date = db.Column(db.Date, nullable=False, index=True)
     hours = db.Column(db.Float, nullable=False)
+
     created_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -214,6 +215,7 @@ def ensure_session_columns():
         # SQLite 不支持在 ALTER TABLE 时使用 CURRENT_TIMESTAMP 作为非常量默认值
         # 这里先追加可空字段，再用 UPDATE 补齐历史数据，插入时靠模型 default 保证非空
         db.session.execute(text("ALTER TABLE session ADD COLUMN created_at DATETIME"))
+      
         altered = True
     if "lesson_id" not in cols:
         db.session.execute(text("ALTER TABLE session ADD COLUMN lesson_id INTEGER"))
@@ -1011,3 +1013,4 @@ def seed_if_empty():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True, host="0.0.0.0", port=5000)
+   
