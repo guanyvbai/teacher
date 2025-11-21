@@ -395,6 +395,10 @@ def create_app():
             if not name:
                 flash("姓名不能为空", "error")
                 return render_template("edit_student.html", student=s, page_title="编辑学生")
+            conflict = Student.query.filter_by(name=name).first()
+            if conflict and conflict.id != s.id:
+                flash("已存在同名学生，请更换姓名", "error")
+                return render_template("edit_student.html", student=s, page_title="编辑学生")
             s.name = name
             s.stage = stage
             db.session.commit()
