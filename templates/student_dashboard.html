@@ -47,10 +47,14 @@
         <td>{{ "%.2f"|format(s.hours) }}</td>
         <td>¥ {{ "%.2f"|format(s.hours * student.hourly_rate) }}</td>
         <td>
+          {% if PERMS.manage_sessions %}
           <form method="post" action="{{ url_for('delete_session', sid=s.id) }}" onsubmit="return confirm('确定删除这条记录吗？');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="danger">删除</button>
           </form>
+          {% else %}
+            <span class="muted small">仅查看</span>
+          {% endif %}
         </td>
       </tr>
       {% else %}
@@ -58,7 +62,8 @@
       {% endfor %}
     </tbody>
   </table>
-  
+
+  {% if PERMS.manage_sessions %}
   <h3>添加课时</h3>
   <form method="post" action="{{ url_for('add_session', sid=student.id) }}" class="form inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -70,5 +75,8 @@
     </label>
     <button type="submit">添加</button>
   </form>
+  {% else %}
+    <p class="muted">当前账号仅可查看课时记录。</p>
+  {% endif %}
 
 {% endblock %}

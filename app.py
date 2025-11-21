@@ -12,6 +12,7 @@ from flask import (
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 from flask_login import (
     LoginManager, login_user, login_required, logout_user, current_user, UserMixin
@@ -22,7 +23,17 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = "login"   # 未登录时重定向到 /login
 
-STAGE_CHOICES = ["初一", "初二", "初三", "高一", "高二", "高三","其他"]
+STAGE_CHOICES = ["初一", "初二", "初三", "高一", "高二", "高三", "其他"]
+ROLE_SUPERADMIN = "superadmin"
+ROLE_TEACHER = "teacher"
+ROLE_ADMIN = "admin"
+ROLE_VIEWER = "viewer"
+ROLE_CHOICES = [
+    (ROLE_SUPERADMIN, "超级管理员（全部权限，可管理账号）"),
+    (ROLE_TEACHER, "老师/管理员（全部业务权限）"),
+    (ROLE_ADMIN, "管理员（仅学生/课时/报表）"),
+    (ROLE_VIEWER, "家长展示账号（只读）"),
+]
 
 # ---------- 模型 ----------
 def bootstrap_db_once():
@@ -44,7 +55,7 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default="admin")  # 可扩展: admin/editor/viewer
+    role = db.Column(db.String(20), nullable=False, default=ROLE_TEACHER)  # 可扩展: admin/editor/viewer
 
     def set_password(self, raw: str):
         self.password_hash = generate_password_hash(raw)
@@ -99,6 +110,38 @@ def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: 
         if not (end_at <= l.start_at or start_at >= l_end):
             conflicts.append(l)
     return conflicts
+
+
+def _permissions(user):
+    role = getattr(user, "role", None)
+    can_schedule = role in {ROLE_SUPERADMIN, ROLE_TEACHER}
+    can_manage_students = role in {ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN}
+    can_manage_users = role == ROLE_SUPERADMIN
+    can_sessions = role in {ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN}
+    readonly = role == ROLE_VIEWER
+    return {
+        "role": role,
+        "manage_users": can_manage_users,
+        "manage_students": can_manage_students,
+        "manage_sessions": can_sessions,
+        "schedule": can_schedule,
+        "readonly": readonly,
+    }
+
+
+def role_required(*roles):
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return login_manager.unauthorized()
+            if current_user.role not in roles:
+                abort(403)
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return deco
     
 def _get_year_month():
     y = request.args.get("year", type=int)
@@ -155,7 +198,7 @@ def ensure_admin_user():
     password = os.getenv("ADMIN_PASS", "admin123")
     u = User.query.filter_by(username=username).first()
     if not u:
-        u = User(username=username, role="admin")
+        u = User(username=username, role=ROLE_SUPERADMIN)
         u.set_password(password)
         db.session.add(u)
         db.session.commit()
@@ -200,10 +243,13 @@ def create_app():
     @app.context_processor
     def inject_globals():
         groups = group_students(Student.query.order_by(Student.name).all())
+        perms = _permissions(current_user)
         return {
             "sidebar_groups": groups,
             "STAGE_CHOICES": STAGE_CHOICES,
-            "csrf_token": _get_or_make_csrf_token
+            "csrf_token": _get_or_make_csrf_token,
+            "PERMS": perms,
+            "ROLE_CHOICES": ROLE_CHOICES,
         }
 
     # 请求计时 + CSRF 保护（白名单放行）
@@ -217,6 +263,10 @@ def create_app():
         # CSRF
         if request.method == "POST" and request.path not in open_paths:
             _csrf_ensure()
+        # 只读账号：拒绝除登录/退出以外的 POST
+        if current_user.is_authenticated and current_user.role == ROLE_VIEWER:
+            if request.method == "POST" and request.path not in {"/logout"}:
+                abort(403)
 
     @app.after_request
     def _toc(resp):
@@ -259,6 +309,81 @@ def create_app():
         logout_user()
         flash("已退出登录", "ok")
         return redirect(url_for("login"))
+
+    # ---- 账号管理（仅超级管理员） ----
+    @app.route("/users")
+    @login_required
+    @role_required(ROLE_SUPERADMIN)
+    def user_list():
+        users = User.query.order_by(User.username.asc()).all()
+        return render_template("users.html", users=users, page_title="账号管理")
+
+    @app.route("/users/new", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN)
+    def user_new():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            role = request.form.get("role", ROLE_TEACHER)
+            if not username or not password:
+                flash("用户名和密码均不能为空", "error")
+                return render_template("new_user.html", page_title="新增账号")
+            if role not in {r for r, _ in ROLE_CHOICES}:
+                flash("角色不合法", "error")
+                return render_template("new_user.html", page_title="新增账号")
+            exists = User.query.filter_by(username=username).first()
+            if exists:
+                flash("用户名已存在", "error")
+                return render_template("new_user.html", page_title="新增账号")
+            u = User(username=username, role=role)
+            u.set_password(password)
+            db.session.add(u)
+            db.session.commit()
+            flash("账号已创建", "ok")
+            return redirect(url_for("user_list"))
+        return render_template("new_user.html", page_title="新增账号")
+
+    @app.route("/users/<int:uid>/edit", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN)
+    def user_edit(uid):
+        user = User.query.get_or_404(uid)
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            role = request.form.get("role", user.role)
+            new_password = request.form.get("password", "")
+            if not username:
+                flash("用户名不能为空", "error")
+                return render_template("edit_user.html", user=user, page_title="编辑账号")
+            if role not in {r for r, _ in ROLE_CHOICES}:
+                flash("角色不合法", "error")
+                return render_template("edit_user.html", user=user, page_title="编辑账号")
+            conflict = User.query.filter_by(username=username).first()
+            if conflict and conflict.id != user.id:
+                flash("已存在同名账号", "error")
+                return render_template("edit_user.html", user=user, page_title="编辑账号")
+            user.username = username
+            user.role = role
+            if new_password:
+                user.set_password(new_password)
+            db.session.commit()
+            flash("账号已更新", "ok")
+            return redirect(url_for("user_list"))
+        return render_template("edit_user.html", user=user, page_title="编辑账号")
+
+    @app.route("/users/<int:uid>/delete", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN)
+    def user_delete(uid):
+        user = User.query.get_or_404(uid)
+        if current_user.id == user.id:
+            flash("不能删除当前登录账号", "error")
+            return redirect(url_for("user_list"))
+        db.session.delete(user)
+        db.session.commit()
+        flash("账号已删除", "ok")
+        return redirect(url_for("user_list"))
 
     # ---- 首页：双日历（需登录） ----
     @app.route("/")
@@ -359,6 +484,7 @@ def create_app():
 
     @app.route("/students/new", methods=["GET", "POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
     def new_student():
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -372,6 +498,10 @@ def create_app():
             if not name:
                 flash("姓名不能为空", "error")
                 return render_template("new_student.html", page_title="添加学生")
+            exists = Student.query.filter_by(name=name).first()
+            if exists:
+                flash("已存在同名学生，请更换姓名", "error")
+                return render_template("new_student.html", page_title="添加学生")
             s = Student(name=name, hourly_rate=rate_val, stage=stage)
             db.session.add(s)
             db.session.commit()
@@ -381,6 +511,7 @@ def create_app():
 
     @app.route("/students/<int:sid>/edit", methods=["GET", "POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
     def edit_student(sid):
         s = Student.query.get_or_404(sid)
         if request.method == "POST":
@@ -408,6 +539,7 @@ def create_app():
 
     @app.route("/students/<int:sid>/delete", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
     def delete_student(sid):
         s = Student.query.get_or_404(sid)
         db.session.delete(s)
@@ -418,6 +550,7 @@ def create_app():
     # ---- 已上课 Session（需登录） ----
     @app.route("/students/<int:sid>/add_session", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
     def add_session(sid):
         student = Student.query.get_or_404(sid)
         date_str = request.form.get("date")
@@ -437,6 +570,7 @@ def create_app():
 
     @app.route("/sessions/<int:sid>/delete", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
     def delete_session(sid):
         sess = Session.query.get_or_404(sid)
         stid = sess.student_id
@@ -449,6 +583,7 @@ def create_app():
     # ---- 课程表 Lesson（需登录） ----
     @app.route("/lessons/add", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def add_lesson():
         try:
             student_id_raw = request.form.get("student_id", "").strip()
@@ -485,6 +620,7 @@ def create_app():
 
     @app.route("/lessons/<int:lid>/done", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def lesson_done(lid):
         l = Lesson.query.get_or_404(lid)
         y, m = l.start_at.year, l.start_at.month
@@ -508,6 +644,7 @@ def create_app():
 
     @app.route("/lessons/<int:lid>/delete", methods=["POST"])
     @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def lesson_delete(lid):
         l = Lesson.query.get_or_404(lid)
         y, m = l.start_at.year, l.start_at.month

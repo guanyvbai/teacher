@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>账号管理</h2>
+
+<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.5rem">
+  <p class="muted">角色控制了可见菜单与可执行的操作。超级管理员拥有全部权限。</p>
+  <a class="btn" href="{{ url_for('user_new') }}">＋ 新建账号</a>
+</div>
+
+<table class="table">
+  <thead><tr><th>用户名</th><th>角色</th><th>操作</th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td class="row">
+        <a class="btn" href="{{ url_for('user_edit', uid=u.id) }}">编辑</a>
+        <form method="post" action="{{ url_for('user_delete', uid=u.id) }}" onsubmit="return confirm('确认删除该账号？');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="danger">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="muted">暂无账号</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
