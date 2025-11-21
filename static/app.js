@@ -31,9 +31,19 @@
       }
     
       loadLessons(dateStr, sid);
-    
+
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeModal() {
+      const modal = $('#dayModal');
+      if (!modal) return;
+      modal.classList.add('hidden');
+      modal.setAttribute('aria-hidden', 'true');
+
+      const list = $('#lessonList');
+      if (list) list.textContent = '';
     }
   
     async function loadLessons(dateStr, sid) {
