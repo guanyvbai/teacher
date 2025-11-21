@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="cards">
+  <div class="card">
+    <div class="card-title">月份</div>
+    <div class="metric">{{ year }} 年 {{ '%02d'|format(month) }} 月</div>
+  </div>
+  <div class="card">
+    <div class="card-title">提示</div>
+    <div class="metric small">家长只读视图，展示排课计划</div>
+  </div>
+</div>
+
+<div class="row" style="justify-content:space-between;align-items:center;margin:.4rem 0">
+  <div class="row">
+    <a class="btn" href="{{ url_for('parent_schedule', year=prev_year, month=prev_month) }}">« 上个月</a>
+    <a class="btn" href="{{ url_for('parent_schedule', year=next_year, month=next_month) }}" style="margin-left:.5rem">下个月 »</a>
+  </div>
+  <div class="muted small">点击日历日期可查看当天排课（无新增按钮）</div>
+</div>
+
+<h3>排课日历</h3>
+{% include "_calendar_lessons.html" with context %}
+
+<h3 style="margin-top:1rem">近期排课列表</h3>
+<div class="timetable">
+  {% if upcoming %}
+    {% for l in upcoming %}
+      <div class="timetable-item {% if l.status=='done' %}done{% elif l.status=='cancelled' %}cancelled{% endif %}" style="margin-bottom:.5rem">
+        <div class="ti-time">{{ l.start_at.strftime('%Y-%m-%d %H:%M') }} · {{ '%.1f'|format(l.duration_hours) }}h</div>
+        <div class="ti-name">{{ l.student.name if l.student else '' }}</div>
+        <div class="ti-note">状态：{{ '已完成' if l.status=='done' else ('已取消' if l.status=='cancelled' else '未上课') }}{% if l.note %} · {{ l.note }}{% endif %}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="muted small">暂无即将到来的排课</div>
+  {% endif %}
+</div>
+{% endblock %}

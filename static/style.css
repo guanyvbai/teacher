@@ -84,6 +84,8 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .event{font-size:.85rem;border:1px solid var(--border);border-radius:.5rem;padding:.15rem .35rem;background:#fff}
 .event .e-time{font-weight:700;margin-right:.25rem}
 .event.done{background:#f0fff4;border-color:#d2f4dc}
+.event.cancelled{background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
+.badge{display:inline-block;font-size:.75rem;padding:.05rem .35rem;border-radius:.35rem;margin-left:.3rem;background:#eef2ff;color:#4338ca}
 .event-more{font-size:.8rem;color:var(--muted)}
   /* timetable */
 .timetable{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:.6rem}
@@ -98,6 +100,7 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .timetable-item .ti-name{margin-top:.1rem}
 .timetable-item .ti-note{color:var(--muted);font-size:.85rem}
 .timetable-item.done{background:#f0fff4;border-color:#d2f4dc}
+.timetable-item.cancelled{background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .btn.small, .danger.small{padding:.25rem .5rem;font-size:.85rem;border-radius:.4rem}
 @media (max-width:1100px){
   .timetable-grid{grid-template-columns:1fr}

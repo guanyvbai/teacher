@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑排课</h2>
+<div class="card" style="padding:1rem;">
+  <form method="post" action="{{ url_for('lesson_edit', lid=lesson.id) }}" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">日期
+        <input type="date" name="lesson_date" value="{{ lesson.start_at.date() }}" required>
+      </label>
+      <label style="flex:1">时间
+        <input type="time" name="lesson_time" value="{{ lesson.start_at.strftime('%H:%M') }}" required>
+      </label>
+    </div>
+    <div class="row">
+      <label style="flex:1">时长(h)
+        <input type="number" step="0.25" min="0.25" name="duration" value="{{ '%.2f'|format(lesson.duration_hours) }}" required>
+      </label>
+      <label style="flex:1">状态
+        <select name="status">
+          <option value="planned" {% if lesson.status=='planned' %}selected{% endif %}>planned（未上课）</option>
+          <option value="done" {% if lesson.status=='done' %}selected{% endif %}>done（已完成）</option>
+          <option value="cancelled" {% if lesson.status=='cancelled' %}selected{% endif %}>cancelled（已取消）</option>
+        </select>
+      </label>
+    </div>
+    <label>备注
+      <input type="text" name="note" value="{{ lesson.note }}" placeholder="课程主题/地点">
+    </label>
+    <div class="row">
+      <button type="submit">保存</button>
+      <a class="btn" href="{{ url_for('dashboard', year=lesson.start_at.year, month=lesson.start_at.month) }}">返回</a>
+    </div>
+  </form>
+</div>
+
+<h3 style="margin-top:1.5rem">复制排课计划</h3>
+<div class="card" style="padding:1rem;">
+  <form method="post" action="{{ url_for('lesson_copy', lid=lesson.id) }}" class="form inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>模式
+      <select name="repeat_mode">
+        <option value="weekly">每周一次</option>
+        <option value="custom">自定义</option>
+      </select>
+    </label>
+    <label>自定义间隔（天）
+      <input type="number" name="repeat_every" min="1" value="7">
+    </label>
+    <label>复制次数
+      <input type="number" name="repeat_count" min="1" value="4">
+    </label>
+    <button type="submit">开始复制</button>
+  </form>
+  <p class="muted small" style="margin-top:.5rem">会从当前排课的时间起，按设置的规律追加未来记录；有冲突的场次会自动跳过。</p>
+</div>
+{% endblock %}

@@ -67,7 +67,9 @@
         data.items.forEach(item => {
           const div = document.createElement('div');
           div.className = 'timetable-item';
-          if (item.status !== 'planned') div.classList.add('done');
+          if (item.status === 'done') div.classList.add('done');
+          if (item.status === 'cancelled') div.classList.add('cancelled');
+          const statusLabel = item.status === 'done' ? '已完成' : (item.status === 'cancelled' ? '已取消' : '未上课');
           let actions = '';
           if (CAN_SCHEDULE) {
             actions = `<div class="ti-actions" style="margin-top:.25rem">` +
@@ -76,16 +78,22 @@
                   <input type="hidden" name="csrf_token" value="${CSRF}">
                   <button type="submit" class="btn small">完成</button>
                 </form>` : ''}` +
+              `${item.status === 'planned' ? `
+                <form method="post" action="/lessons/${item.id}/cancel" style="display:inline">
+                  <input type="hidden" name="csrf_token" value="${CSRF}">
+                  <button type="submit" class="btn small">取消</button>
+                </form>` : ''}` +
               `<form method="post" action="/lessons/${item.id}/delete" style="display:inline" onsubmit="return confirm('删除这条排课？');">
                 <input type="hidden" name="csrf_token" value="${CSRF}">
                 <button type="submit" class="danger small">删除</button>
               </form>` +
+              `<a class="btn small" style="margin-left:.25rem" href="/lessons/${item.id}/edit">编辑/复制</a>` +
               `</div>`;
           }
           div.innerHTML = `
             <div class="ti-time">${item.time} · ${item.duration.toFixed(2)}h</div>
             <div class="ti-name">${item.student_name || ''}</div>
-            ${item.note ? `<div class="ti-note">${item.note}</div>` : ''}
+            <div class="ti-note">状态：${statusLabel}${item.note ? ' · ' + item.note : ''}</div>
             ${actions}
           `;
           list.appendChild(div);
