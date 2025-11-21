@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑课时 · {{ student.name }}</h2>
+<div class="card" style="padding:1rem;">
+  <p class="muted small">仅允许在记录创建 24 小时内调整课时数或标记缺席。</p>
+  <form method="post" action="{{ url_for('edit_session', sid=session.id) }}" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label style="flex:1">日期
+        <input type="date" value="{{ session.date }}" disabled>
+      </label>
+      <label style="flex:1">课时（小时）
+        <input type="number" name="hours" step="0.25" min="0.25" value="{{ '%.2f'|format(session.hours) }}" required>
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" name="absent" value="1" {% if session.absent %}checked{% endif %}> 标记缺席（课时将计为 0）
+    </label>
+    <label>授课内容
+      <input type="text" name="content" value="{{ session.content }}" placeholder="例：代数复习/作文点评">
+    </label>
+    <label>反馈
+      <input type="text" name="feedback" value="{{ session.feedback or '' }}" placeholder="课后反馈、作业提醒等">
+    </label>
+    <div class="row">
+      <button type="submit">保存</button>
+      <a class="btn" href="{{ url_for('student_dashboard', sid=student.id) }}">返回学生页</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

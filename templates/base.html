@@ -15,6 +15,7 @@
     </div>
     <nav class="menu">
       <a class="menu-item {% if request.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}">仪表盘</a>
+      <a class="menu-item {% if request.path.startswith('/parent/schedule') %}active{% endif %}" href="{{ url_for('parent_schedule') }}">家长日程</a>
       <a class="menu-item {% if request.path == '/students' %}active{% endif %}" href="{{ url_for('students') }}">学生列表</a>
       {% if PERMS.manage_users %}
       <a class="menu-item {% if request.path.startswith('/users') %}active{% endif %}" href="{{ url_for('user_list') }}">账号管理</a>
