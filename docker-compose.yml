@@ -10,8 +10,8 @@ services:
       - FLASK_ENV=production
       - DATABASE_URL=sqlite:////data/app.db
       - SECRET_KEY=PVLEisUey6x4
-      - ADMIN_USER=admin
-      - ADMIN_PASS=Yuan040531
+      - ADMIN_USER=master
+      - ADMIN_PASS=Huang923800
     volumes:
       - app_data:/data
     restart: unless-stopped
