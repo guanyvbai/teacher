@@ -2,29 +2,33 @@
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
     const CSRF = (window.PAGE && window.PAGE.csrfToken) || '';
+    const CAN_SCHEDULE = !!(window.PAGE && window.PAGE.canSchedule);
   
     function openModal(dateStr) {
       const modal = $('#dayModal');
       $('#modalDate').textContent = dateStr;
-      $('#lessonDate').value = dateStr;
+      const lessonDate = $('#lessonDate');
+      if (lessonDate) lessonDate.value = dateStr;
     
       const sid = window.PAGE?.studentId;
       const studentSelect = $('#lessonStudent');
       const studentHidden = $('#lessonStudentHidden');
-    
-      if (sid) {
-        studentSelect.value = sid;
-        studentSelect.disabled = true;          // 锁定下拉
-        if (studentHidden) studentHidden.value = sid; // ✅ 确保表单能提交 student_id
-      } else {
-        studentSelect.disabled = false;
-        if (studentHidden) studentHidden.value = studentSelect.value || '';
+
+      if (studentSelect) {
+        if (sid) {
+          studentSelect.value = sid;
+          studentSelect.disabled = true;          // 锁定下拉
+          if (studentHidden) studentHidden.value = sid; // ✅ 确保表单能提交 student_id
+        } else {
+          studentSelect.disabled = false;
+          if (studentHidden) studentHidden.value = studentSelect.value || '';
+        }
+
+        // 如果用户在首页修改了下拉的学生，顺手同步隐藏域
+        studentSelect.addEventListener('change', () => {
+          if (studentHidden) studentHidden.value = studentSelect.value || '';
+        }, { once: true });
       }
-    
-      // 如果用户在首页修改了下拉的学生，顺手同步隐藏域
-      studentSelect.addEventListener('change', () => {
-        if (studentHidden) studentHidden.value = studentSelect.value || '';
-      }, { once: true });
     
       loadLessons(dateStr, sid);
     
@@ -54,21 +58,25 @@
           const div = document.createElement('div');
           div.className = 'timetable-item';
           if (item.status !== 'planned') div.classList.add('done');
+          let actions = '';
+          if (CAN_SCHEDULE) {
+            actions = `<div class="ti-actions" style="margin-top:.25rem">` +
+              `${item.status === 'planned' ? `
+                <form method="post" action="/lessons/${item.id}/done" style="display:inline">
+                  <input type="hidden" name="csrf_token" value="${CSRF}">
+                  <button type="submit" class="btn small">完成</button>
+                </form>` : ''}` +
+              `<form method="post" action="/lessons/${item.id}/delete" style="display:inline" onsubmit="return confirm('删除这条排课？');">
+                <input type="hidden" name="csrf_token" value="${CSRF}">
+                <button type="submit" class="danger small">删除</button>
+              </form>` +
+              `</div>`;
+          }
           div.innerHTML = `
             <div class="ti-time">${item.time} · ${item.duration.toFixed(2)}h</div>
             <div class="ti-name">${item.student_name || ''}</div>
             ${item.note ? `<div class="ti-note">${item.note}</div>` : ''}
-            <div class="ti-actions" style="margin-top:.25rem">
-              ${item.status === 'planned' ? `
-                <form method="post" action="/lessons/${item.id}/done" style="display:inline">
-                  <input type="hidden" name="csrf_token" value="${CSRF}">
-                  <button type="submit" class="btn small">完成</button>
-                </form>` : ''}
-              <form method="post" action="/lessons/${item.id}/delete" style="display:inline" onsubmit="return confirm('删除这条排课？');">
-                <input type="hidden" name="csrf_token" value="${CSRF}">
-                <button type="submit" class="danger small">删除</button>
-              </form>
-            </div>
+            ${actions}
           `;
           list.appendChild(div);
         });
@@ -99,7 +107,7 @@
     });
     function bindLessonFormGuard() {
       const form = document.getElementById('lessonForm');
-      if (!form) return;
+      if (!form || !CAN_SCHEDULE) return;
       form.addEventListener('submit', async (e) => {
         const dateStr   = document.getElementById('lessonDate')?.value;
         const timeStr   = form.querySelector('input[name="lesson_time"]')?.value;

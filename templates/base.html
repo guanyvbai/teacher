@@ -16,6 +16,9 @@
     <nav class="menu">
       <a class="menu-item {% if request.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}">仪表盘</a>
       <a class="menu-item {% if request.path == '/students' %}active{% endif %}" href="{{ url_for('students') }}">学生列表</a>
+      {% if PERMS.manage_users %}
+      <a class="menu-item {% if request.path.startswith('/users') %}active{% endif %}" href="{{ url_for('user_list') }}">账号管理</a>
+      {% endif %}
 
       {% for stage, items in sidebar_groups %}
         <div class="menu-section">{{ stage }}</div>
@@ -29,7 +32,9 @@
         </div>
       {% endfor %}
 
+      {% if PERMS.manage_students %}
       <a class="menu-item subtle" href="{{ url_for('new_student') }}">＋ 添加学生</a>
+      {% endif %}
     </nav>
   </aside>
 
@@ -39,7 +44,7 @@
       <div class="topbar-actions">
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <span class="muted small" style="margin-right:.5rem">👤 {{ current_user.username }}</span>
+          <span class="muted small" style="margin-right:.5rem">👤 {{ current_user.username }} · {{ PERMS.role or '未设置角色' }}</span>
           <button type="submit" class="btn">退出</button>
         </form>
       </div>
@@ -73,6 +78,7 @@
         <div id="lessonList" class="lesson-list small muted">加载中…</div>
 
         <h4 style="margin-top:.8rem">新增排课</h4>
+        {% if PERMS.schedule %}
         <form id="lessonForm" method="post" action="{{ url_for('add_lesson') }}" class="form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="row">
@@ -108,6 +114,9 @@
             <button class="btn" type="button" data-close>关闭</button>
           </div>
         </form>
+        {% else %}
+          <p class="muted small">当前账号无排课权限，仅可查看排课列表。</p>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -115,7 +124,9 @@
   <script>
     window.PAGE = {
       studentId: (document.querySelector('main.main')?.dataset?.studentId || null),
-      csrfToken: (document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '')
+      csrfToken: (document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''),
+      canSchedule: {{ 'true' if PERMS.schedule else 'false' }},
+      readonly: {{ 'true' if PERMS.readonly else 'false' }}
     };
   </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

@@ -34,32 +34,36 @@
   </div>
 </div>
 
-<h3 style="margin-top:1rem">快速添加到课程表</h3>
-<form method="post" action="{{ url_for('add_lesson') }}" class="form inline">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>学生
-      <select name="student_id" required>
-        {% for stage, items in sidebar_groups %}
-          <optgroup label="{{ stage }}">
-            {% for s in items %}
-              <option value="{{ s.id }}">{{ s.name }}</option>
-            {% endfor %}
-          </optgroup>
-        {% endfor %}
-      </select>
-    </label>
-    <label>日期
-      <input type="date" name="lesson_date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
-    </label>
-    <label>时间
-      <input type="time" name="lesson_time" value="19:00" required>
-    </label>
-    <label>时长(h)
-      <input type="number" name="duration" step="0.25" min="0.25" value="1.0" required>
-    </label>
-    <label>备注
-      <input type="text" name="note" placeholder="可填：课程主题/地点">
-    </label>
-    <button type="submit">添加</button>
-  </form>
+{% if PERMS.schedule %}
+  <h3 style="margin-top:1rem">快速添加到课程表</h3>
+  <form method="post" action="{{ url_for('add_lesson') }}" class="form inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>学生
+        <select name="student_id" required>
+          {% for stage, items in sidebar_groups %}
+            <optgroup label="{{ stage }}">
+              {% for s in items %}
+                <option value="{{ s.id }}">{{ s.name }}</option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+      </label>
+      <label>日期
+        <input type="date" name="lesson_date" value="{{ year }}-{{ '%02d'|format(month) }}-01" required>
+      </label>
+      <label>时间
+        <input type="time" name="lesson_time" value="19:00" required>
+      </label>
+      <label>时长(h)
+        <input type="number" name="duration" step="0.25" min="0.25" value="1.0" required>
+      </label>
+      <label>备注
+        <input type="text" name="note" placeholder="可填：课程主题/地点">
+      </label>
+      <button type="submit">添加</button>
+    </form>
+{% else %}
+  <p class="muted" style="margin-top:1rem">当前账号无排课权限，仅可查看课程表。</p>
+{% endif %}
 {% endblock %}
