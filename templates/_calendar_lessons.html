@@ -30,7 +30,7 @@
   
             {% if in_month and events %}
               <div class="cal-list">
-                {% for l in events[:3] %}
+                {% for l in events %}
                   {% set cls = 'done' if l.status=='done' else ('cancelled' if l.status=='cancelled' else '') %}
                   <div class="event {{ cls }}">
                     <span class="e-time">{{ l.start_at.strftime("%H:%M") }}</span>
@@ -41,9 +41,6 @@
                     {% endif %}
                   </div>
                 {% endfor %}
-                {% if events|length > 3 %}
-                  <div class="event-more">+{{ events|length - 3 }} 条</div>
-                {% endif %}
               </div>
             {% else %}
               <div class="muted small" style="margin-top:.25rem">无排课</div>

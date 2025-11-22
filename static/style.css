@@ -96,24 +96,30 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .calendar{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:.6rem;overflow-x:auto}
 .calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.5rem}
 .cal-head{font-size:.85rem;color:var(--muted);text-align:center}
-.cal-cell{border:1px solid var(--border);border-radius:.8rem;padding:.4rem;height:95px;display:flex;flex-direction:column}
+.cal-cell{border:1px solid var(--border);border-radius:.8rem;padding:.4rem;display:flex;flex-direction:column;min-height:110px}
 .cal-cell .cal-date{font-weight:700;margin-bottom:.2rem}
 .cal-hours{font-size:.9rem}
 .cal-fee{margin-top:auto;font-weight:700;color:var(--accent)}
 .muted-bg{background:#f8fafc;color:#94a3b8}
 @media (max-width: 1000px){
   .calendar-grid{gap:.35rem;min-width:720px}
-  .cal-cell{height:80px}
 }
 
 /* calendar events inside day cell */
-.cal-list{margin-top:.35rem;display:flex;flex-direction:column;gap:.25rem;max-height:88px;overflow:hidden}
+.cal-list{margin-top:.35rem;display:flex;flex-direction:column;gap:.25rem}
 .event{font-size:.85rem;border:1px solid var(--border);border-radius:.5rem;padding:.15rem .35rem;background:#fff}
 .event .e-time{font-weight:700;margin-right:.25rem}
 .event.done{background:#f0fff4;border-color:#d2f4dc}
 .event.cancelled{background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .badge{display:inline-block;font-size:.75rem;padding:.05rem .35rem;border-radius:.35rem;margin-left:.3rem;background:#eef2ff;color:#4338ca}
 .event-more{font-size:.8rem;color:var(--muted)}
+
+/* calendar switcher */
+.calendar-switcher{align-items:center;gap:.5rem;flex-wrap:wrap}
+.calendar-switcher .btn.secondary{background:#f8fafc;border:1px solid var(--border);color:inherit}
+.calendar-switcher .btn.secondary.active{background:#4338ca;color:#fff;border-color:#4338ca}
+.calendar-pane{display:none}
+.calendar-pane.active{display:block}
   /* timetable */
 .timetable{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:.6rem}
 .timetable-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.6rem}

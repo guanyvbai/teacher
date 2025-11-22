@@ -126,6 +126,7 @@
       bindConfirmations();
       hydrateFlashToasts();
       bindSidebarToggle();
+      bindCalendarSwitchers();
     });
 
     function bindSidebarToggle() {
@@ -154,6 +155,38 @@
       });
 
       backdrop.addEventListener('click', close);
+    }
+
+    function bindCalendarSwitchers() {
+      $$('[data-calendar-switch]').forEach(switcher => {
+        const container = switcher.nextElementSibling && switcher.nextElementSibling.matches('[data-calendar-views]')
+          ? switcher.nextElementSibling
+          : null;
+        if (!container) return;
+
+        const defaultView = container.getAttribute('data-default-view') || 'lessons';
+        setCalendarView(container, defaultView);
+
+        switcher.querySelectorAll('[data-target-view]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const view = btn.getAttribute('data-target-view');
+            setCalendarView(container, view);
+            switcher.querySelectorAll('[data-target-view]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          });
+        });
+      });
+    }
+
+    function setCalendarView(container, view) {
+      if (!container || !view) return;
+      container.querySelectorAll('.calendar-pane').forEach(pane => {
+        if (pane.getAttribute('data-view') === view) {
+          pane.classList.add('active');
+        } else {
+          pane.classList.remove('active');
+        }
+      });
     }
     function bindLessonFormGuard() {
       const form = document.getElementById('lessonForm');

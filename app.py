@@ -696,6 +696,49 @@ def create_app():
             page_title="本月总览：课时费 & 课程表"
         )
 
+    @app.route("/lessons/export")
+    @login_required
+    def export_lessons():
+        year, month = _get_year_month()
+        start_m, end_m = month_bounds(year, month)
+        sid = request.args.get("student_id", type=int)
+
+        query = Lesson.query.join(Student)
+        if sid:
+            query = query.filter(Lesson.student_id == sid)
+
+        lessons = (
+            query
+            .filter(Lesson.start_at >= datetime.combine(start_m, datetime.min.time()))
+            .filter(Lesson.start_at < datetime.combine(end_m, datetime.min.time()))
+            .order_by(Lesson.start_at.asc())
+            .all()
+        )
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["日期", "时间", "学生", "时长(小时)", "状态", "备注"])
+        for l in lessons:
+            writer.writerow([
+                l.start_at.date().isoformat(),
+                l.start_at.strftime("%H:%M"),
+                l.student.name if l.student else "",
+                f"{l.duration_hours:.2f}",
+                "已完成" if l.status == LESSON_STATUS_DONE else ("已取消" if l.status == LESSON_STATUS_CANCELLED else "未上课"),
+                l.note or "",
+            ])
+
+        output.seek(0)
+        filename = f"lessons_{year:04d}{month:02d}.csv"
+        if sid:
+            filename = f"student_{sid}_" + filename
+
+        return Response(
+            output.getvalue().encode("utf-8-sig"),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
     @app.route("/parent/schedule")
     @login_required
     def parent_schedule():
