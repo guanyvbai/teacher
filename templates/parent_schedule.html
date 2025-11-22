@@ -36,4 +36,17 @@
     <div class="muted small">暂无即将到来的排课</div>
   {% endif %}
 </div>
+
+<h3 style="margin-top:1rem">学习进度与反馈</h3>
+<div class="timetable">
+  {% for s in recent_sessions %}
+    <div class="timetable-item" style="margin-bottom:.5rem">
+      <div class="ti-time">{{ s.date }} · {{ s.student.name if s.student else '' }} · {{ '%.1f'|format(s.hours) }}h</div>
+      <div class="ti-name">{{ s.subject }} · {{ s.content or '未填写内容' }}</div>
+      <div class="ti-note">反馈：{{ s.feedback or '暂无反馈' }}</div>
+    </div>
+  {% else %}
+    <div class="muted small">近期暂无学习记录</div>
+  {% endfor %}
+</div>
 {% endblock %}

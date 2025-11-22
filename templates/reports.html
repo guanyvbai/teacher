@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>统计报表</h2>
+<form method="get" class="form inline" style="margin-bottom:1rem;">
+  <label>维度
+    <select name="scope">
+      <option value="day" {% if scope=='day' %}selected{% endif %}>日</option>
+      <option value="month" {% if scope=='month' %}selected{% endif %}>月</option>
+      <option value="year" {% if scope=='year' %}selected{% endif %}>年</option>
+    </select>
+  </label>
+  <label>年份
+    <input type="number" name="year" value="{{ start.year }}">
+  </label>
+  <label>月份
+    <input type="number" name="month" value="{{ start.month }}" min="1" max="12">
+  </label>
+  <label>日期（仅日维度）
+    <input type="date" name="date" value="{{ start }}">
+  </label>
+  <button type="submit">刷新</button>
+  <a class="btn" href="{{ url_for('export_reports', scope=scope, year=start.year, month=start.month, date=start) }}">导出 CSV</a>
+</form>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-title">时间范围</div>
+    <div class="metric">{{ start }} ~ {{ end }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">总课时</div>
+    <div class="metric">{{ '%.2f'|format(total_hours) }} h</div>
+  </div>
+  <div class="card">
+    <div class="card-title">课酬收入</div>
+    <div class="metric accent">¥ {{ '%.2f'|format(total_income) }}</div>
+  </div>
+  <div class="card">
+    <div class="card-title">出勤率</div>
+    <div class="metric">{{ '%.0f'|format(attendance_rate*100) }}%</div>
+  </div>
+</div>
+
+<h3>科目课时及收入占比</h3>
+<table class="table">
+  <thead><tr><th>科目</th><th>课时</th><th>收入</th></tr></thead>
+  <tbody>
+    {% for subject, stat in subject_stats.items() %}
+      <tr><td>{{ subject }}</td><td>{{ '%.2f'|format(stat.hours if stat.hours is defined else stat['hours']) }}</td><td>¥ {{ '%.2f'|format(stat.income if stat.income is defined else stat['income']) }}</td></tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">暂无数据</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>学生课时收入分布</h3>
+<table class="table">
+  <thead><tr><th>学生</th><th>收入</th></tr></thead>
+  <tbody>
+    {% for stu, inc in income_by_student.items() %}
+      <tr><td>{{ stu }}</td><td>¥ {{ '%.2f'|format(inc) }}</td></tr>
+    {% else %}
+      <tr><td colspan="2" class="muted">暂无数据</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">期间缴费总额</div>
+  <div class="metric">¥ {{ '%.2f'|format(payments_sum) }}</div>
+  <p class="muted small">仅内部老师/管理员可见，不会在家长端展示任何费用信息。</p>
+</div>
+{% endblock %}

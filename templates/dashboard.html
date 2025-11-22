@@ -5,10 +5,17 @@
     <div class="card-title">当月总课时</div>
     <div class="metric">{{ "%.2f"|format(total_hours) }} 小时</div>
   </div>
+  {% if not PERMS.readonly %}
   <div class="card">
     <div class="card-title">当月总课时费</div>
     <div class="metric accent">¥ {{ "%.2f"|format(total_fee) }}</div>
   </div>
+  {% else %}
+  <div class="card">
+    <div class="card-title">本月规划</div>
+    <div class="metric small">本页面隐藏费用信息，仅展示日程与课时。</div>
+  </div>
+  {% endif %}
   <div class="card">
     <div class="card-title">月份</div>
     <div class="metric">{{ year }} 年 {{ "%02d"|format(month) }} 月</div>

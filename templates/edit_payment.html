@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑缴费记录</h2>
+<form method="post" action="{{ url_for('edit_payment', pid=payment.id) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>日期
+    <input type="date" name="date" value="{{ payment.date }}" required>
+  </label>
+  <label>金额 (¥)
+    <input type="number" name="amount" step="0.01" value="{{ '%.2f'|format(payment.amount) }}" required>
+  </label>
+  <label>支付方式
+    <input type="text" name="method" value="{{ payment.method }}" required>
+  </label>
+  <label>用途
+    <select name="category">
+      <option value="{{ CHARGE_MODE_PREPAID }}" {% if payment.category == CHARGE_MODE_PREPAID %}selected{% endif %}>预付课时</option>
+      <option value="arrears_payment" {% if payment.category == 'arrears_payment' %}selected{% endif %}>支付欠费</option>
+      <option value="balance_topup" {% if payment.category == 'balance_topup' %}selected{% endif %}>充值余额</option>
+    </select>
+  </label>
+  <label>经办人
+    <input type="text" name="operator" value="{{ payment.operator }}">
+  </label>
+  <label>备注
+    <input type="text" name="note" value="{{ payment.note }}">
+  </label>
+  <div class="row">
+    <button type="submit">保存</button>
+    <a class="btn" href="{{ url_for('student_dashboard', sid=payment.student_id) }}">返回</a>
+  </div>
+</form>
+{% endblock %}

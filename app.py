@@ -1,13 +1,15 @@
 import os
 import time
 import fcntl
+import csv
+import io
 from datetime import date, datetime, timedelta
 from secrets import token_urlsafe
 
 from dateutil.relativedelta import relativedelta
 from flask import (
     Flask, render_template, request, redirect, url_for, flash, jsonify,
-    abort, g, session
+    abort, g, session, Response
 )
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
@@ -27,6 +29,14 @@ STAGE_CHOICES = ["其他", "初一", "初二", "初三", "高一", "高二", "�
 LESSON_STATUS_PLANNED = "planned"
 LESSON_STATUS_DONE = "done"
 LESSON_STATUS_CANCELLED = "cancelled"
+CHARGE_MODE_PREPAID = "prepaid_hours"
+CHARGE_MODE_PAY_PER_LESSON = "pay_per_lesson"
+CHARGE_MODE_MONTHLY = "monthly_settlement"
+CHARGE_MODE_CHOICES = [
+    (CHARGE_MODE_PREPAID, "预付课时"),
+    (CHARGE_MODE_PAY_PER_LESSON, "一课一付"),
+    (CHARGE_MODE_MONTHLY, "合作机构月结"),
+]
 ROLE_SUPERADMIN = "superadmin"
 ROLE_TEACHER = "teacher"
 ROLE_ADMIN = "admin"
@@ -51,6 +61,7 @@ def bootstrap_db_once():
         try:
             db.create_all()
             ensure_stage_column()
+            ensure_student_finance_columns()
             ensure_session_columns()
             ensure_lesson_status_column()
             ensure_admin_user()
@@ -78,8 +89,14 @@ class Student(db.Model):
     name = db.Column(db.String(120), nullable=False, unique=True)
     hourly_rate = db.Column(db.Float, nullable=False, default=100.0)
     stage = db.Column(db.String(50), nullable=False, default="其他")
+    charge_mode = db.Column(db.String(30), nullable=False, default=CHARGE_MODE_PAY_PER_LESSON)
+    remaining_hours = db.Column(db.Float, nullable=False, default=0.0)
+    outstanding_amount = db.Column(db.Float, nullable=False, default=0.0)
+    balance_amount = db.Column(db.Float, nullable=False, default=0.0)
     sessions = db.relationship("Session", backref="student", cascade="all, delete-orphan")
     lessons = db.relationship("Lesson", backref="student", cascade="all, delete-orphan")
+    payments = db.relationship("PaymentRecord", backref="student", cascade="all, delete-orphan")
+    exams = db.relationship("ExamRecord", backref="student", cascade="all, delete-orphan")
 
 class Session(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -97,6 +114,10 @@ class Session(db.Model):
     absent = db.Column(db.Boolean, nullable=False, default=False)
     content = db.Column(db.String(255), nullable=False, default="")
     feedback = db.Column(db.Text, nullable=True)
+    subject = db.Column(db.String(80), nullable=False, default="综合")
+    charged_amount = db.Column(db.Float, nullable=False, default=0.0)
+    deducted_hours = db.Column(db.Float, nullable=False, default=0.0)
+    outstanding_amount = db.Column(db.Float, nullable=False, default=0.0)
 
 class Lesson(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -105,6 +126,27 @@ class Lesson(db.Model):
     duration_hours = db.Column(db.Float, nullable=False, default=1.0)
     note = db.Column(db.String(200), nullable=False, default="")
     status = db.Column(db.String(20), nullable=False, default=LESSON_STATUS_PLANNED)  # planned/done/cancelled
+
+
+class PaymentRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("student.id"), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    amount = db.Column(db.Float, nullable=False)
+    method = db.Column(db.String(80), nullable=False, default="现金")
+    operator = db.Column(db.String(80), nullable=False, default="")
+    note = db.Column(db.String(255), nullable=False, default="")
+    category = db.Column(db.String(40), nullable=False, default=CHARGE_MODE_PREPAID)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class ExamRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("student.id"), nullable=False, index=True)
+    exam_date = db.Column(db.Date, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    score = db.Column(db.Float, nullable=False)
+    essay_score = db.Column(db.Float, nullable=True)
 
 # ---------- 工具 ----------
 def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: int | None = None):
@@ -207,6 +249,26 @@ def ensure_stage_column():
         db.session.commit()
 
 
+def ensure_student_finance_columns():
+    info = db.session.execute(text("PRAGMA table_info('student')")).fetchall()
+    cols = [row[1] for row in info]
+    altered = False
+    if "charge_mode" not in cols:
+        db.session.execute(text("ALTER TABLE student ADD COLUMN charge_mode VARCHAR(30) NOT NULL DEFAULT 'pay_per_lesson'"))
+        altered = True
+    if "remaining_hours" not in cols:
+        db.session.execute(text("ALTER TABLE student ADD COLUMN remaining_hours FLOAT NOT NULL DEFAULT 0"))
+        altered = True
+    if "outstanding_amount" not in cols:
+        db.session.execute(text("ALTER TABLE student ADD COLUMN outstanding_amount FLOAT NOT NULL DEFAULT 0"))
+        altered = True
+    if "balance_amount" not in cols:
+        db.session.execute(text("ALTER TABLE student ADD COLUMN balance_amount FLOAT NOT NULL DEFAULT 0"))
+        altered = True
+    if altered:
+        db.session.commit()
+
+
 def ensure_session_columns():
     info = db.session.execute(text("PRAGMA table_info('session')")).fetchall()
     cols = [row[1] for row in info]
@@ -229,11 +291,24 @@ def ensure_session_columns():
     if "feedback" not in cols:
         db.session.execute(text("ALTER TABLE session ADD COLUMN feedback TEXT"))
         altered = True
+    if "subject" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN subject VARCHAR(80) NOT NULL DEFAULT '综合'"))
+        altered = True
+    if "charged_amount" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN charged_amount FLOAT NOT NULL DEFAULT 0"))
+        altered = True
+    if "deducted_hours" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN deducted_hours FLOAT NOT NULL DEFAULT 0"))
+        altered = True
+    if "outstanding_amount" not in cols:
+        db.session.execute(text("ALTER TABLE session ADD COLUMN outstanding_amount FLOAT NOT NULL DEFAULT 0"))
+        altered = True
     if altered:
         db.session.commit()
     db.session.execute(text("UPDATE session SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)"))
     db.session.execute(text("UPDATE session SET absent = COALESCE(absent, 0)"))
     db.session.execute(text("UPDATE session SET content = COALESCE(content, '')"))
+    db.session.execute(text("UPDATE session SET subject = COALESCE(subject, '综合')"))
     db.session.commit()
 
 
@@ -243,6 +318,32 @@ def ensure_lesson_status_column():
     if "status" not in cols:
         db.session.execute(text("ALTER TABLE lesson ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'planned'"))
         db.session.commit()
+
+
+def _apply_payment_effect(student: Student, record: "PaymentRecord"):
+    amount = float(record.amount or 0.0)
+    rate = student.hourly_rate or 1
+    if record.category == CHARGE_MODE_PREPAID:
+        student.remaining_hours = round((student.remaining_hours or 0.0) + amount / rate, 2)
+    elif record.category == "arrears_payment":
+        prev = student.outstanding_amount or 0.0
+        student.outstanding_amount = max(0.0, round(prev - amount, 2))
+        leftover = amount - prev
+        if leftover > 0:
+            student.balance_amount = round((student.balance_amount or 0.0) + leftover, 2)
+    elif record.category == "balance_topup":
+        student.balance_amount = round((student.balance_amount or 0.0) + amount, 2)
+
+
+def _revert_payment_effect(student: Student, record: "PaymentRecord"):
+    amount = float(record.amount or 0.0)
+    rate = student.hourly_rate or 1
+    if record.category == CHARGE_MODE_PREPAID:
+        student.remaining_hours = max(0.0, (student.remaining_hours or 0.0) - amount / rate)
+    elif record.category == "arrears_payment":
+        student.outstanding_amount = round((student.outstanding_amount or 0.0) + amount, 2)
+    elif record.category == "balance_topup":
+        student.balance_amount = max(0.0, (student.balance_amount or 0.0) - amount)
 
 def ensure_admin_user():
     """
@@ -298,20 +399,73 @@ def ensure_session_for_lesson(lesson: Lesson):
         sess.hours = float(lesson.duration_hours)
         sess.absent = False
         sess.date = lesson.start_at.date()
+        refresh_session_finance(sess)
     else:
-        db.session.add(Session(
+        sess = Session(
             student_id=lesson.student_id,
             date=lesson.start_at.date(),
             hours=float(lesson.duration_hours),
             lesson_id=lesson.id,
             absent=False,
-        ))
+        )
+        db.session.add(sess)
+        refresh_session_finance(sess)
 
 
 def remove_session_for_lesson(lesson: Lesson):
     sess = Session.query.filter_by(lesson_id=lesson.id).first()
     if sess:
+        if sess.student:
+            _revert_finance_effect(sess.student, sess)
         db.session.delete(sess)
+
+
+def _revert_finance_effect(student: Student, sess: Session):
+    student.remaining_hours = max(0.0, (student.remaining_hours or 0.0) + float(sess.deducted_hours or 0.0))
+    student.outstanding_amount = max(0.0, (student.outstanding_amount or 0.0) - float(sess.outstanding_amount or 0.0))
+    sess.deducted_hours = 0.0
+    sess.outstanding_amount = 0.0
+    sess.charged_amount = 0.0
+
+
+def _apply_finance_effect(student: Student, sess: Session):
+    if sess.absent:
+        sess.deducted_hours = 0.0
+        sess.outstanding_amount = 0.0
+        sess.charged_amount = 0.0
+        return
+
+    hours = float(sess.hours or 0.0)
+    rate = float(student.hourly_rate or 0.0)
+    sess.charged_amount = round(hours * rate, 2)
+
+    mode = student.charge_mode or CHARGE_MODE_PAY_PER_LESSON
+    remaining = float(student.remaining_hours or 0.0)
+
+    if mode == CHARGE_MODE_PREPAID:
+        if remaining >= hours:
+            sess.deducted_hours = hours
+            student.remaining_hours = round(remaining - hours, 2)
+            sess.outstanding_amount = 0.0
+        else:
+            sess.deducted_hours = remaining
+            owed_hours = hours - remaining
+            owed_amount = round(owed_hours * rate, 2)
+            student.remaining_hours = 0.0
+            sess.outstanding_amount = owed_amount
+            student.outstanding_amount = round((student.outstanding_amount or 0.0) + owed_amount, 2)
+    else:
+        sess.deducted_hours = 0.0
+        sess.outstanding_amount = round(hours * rate, 2)
+        student.outstanding_amount = round((student.outstanding_amount or 0.0) + sess.outstanding_amount, 2)
+
+
+def refresh_session_finance(sess: Session):
+    student = sess.student
+    if not student:
+        return
+    _revert_finance_effect(student, sess)
+    _apply_finance_effect(student, sess)
 
 # ---- 简易 CSRF（对所有 POST 生效） ----
 def _csrf_ensure():
@@ -361,6 +515,8 @@ def create_app():
             "ROLE_CHOICES": ROLE_CHOICES,
             "ROLE_LABELS": ROLE_LABELS,
             "is_session_editable": is_session_editable,
+            "CHARGE_MODE_CHOICES": CHARGE_MODE_CHOICES,
+            "CHARGE_MODE_PREPAID": CHARGE_MODE_PREPAID,
         }
 
     # 请求计时 + CSRF 保护（白名单放行）
@@ -512,7 +668,7 @@ def create_app():
         total_hours = total_fee = 0.0
         for s in sessions:
             per_day[s.date]["hours"] += s.hours
-            fee = s.hours * s.student.hourly_rate
+            fee = s.charged_amount if s.charged_amount else s.hours * s.student.hourly_rate
             per_day[s.date]["fee"] += fee
             total_hours += s.hours
             total_fee += fee
@@ -559,6 +715,10 @@ def create_app():
                     .filter(Lesson.start_at >= datetime.combine(date.today(), datetime.min.time()))
                     .order_by(Lesson.start_at.asc()).limit(50).all())
 
+        recent_sessions = (Session.query.join(Student)
+                            .filter(Session.date >= start_m - relativedelta(months=1))
+                            .order_by(Session.date.desc()).limit(30).all())
+
         prev = start_m - relativedelta(months=1)
         nextm = start_m + relativedelta(months=1)
         return render_template(
@@ -568,7 +728,8 @@ def create_app():
             prev_year=prev.year, prev_month=prev.month,
             next_year=nextm.year, next_month=nextm.month,
             upcoming=upcoming,
-            page_title="家长端：排课规划"
+            recent_sessions=recent_sessions,
+            page_title="家长端：排课规划",
         )
 
     # ---- 学生页：双日历（需登录） ----
@@ -587,7 +748,7 @@ def create_app():
         total_hours = total_fee = 0.0
         for s in sessions:
             per_day[s.date]["hours"] += s.hours
-            fee = s.hours * student.hourly_rate
+            fee = s.charged_amount if s.charged_amount else s.hours * student.hourly_rate
             per_day[s.date]["fee"] += fee
             total_hours += s.hours
             total_fee += fee
@@ -604,11 +765,19 @@ def create_app():
 
         prev = start - relativedelta(months=1)
         nextm = start + relativedelta(months=1)
+        payments = (PaymentRecord.query.filter_by(student_id=sid)
+                    .order_by(PaymentRecord.date.desc(), PaymentRecord.id.desc()).limit(50).all())
+        exams = (ExamRecord.query.filter_by(student_id=sid)
+                 .order_by(ExamRecord.exam_date.desc()).all())
+        history_sessions = (Session.query.filter(Session.student_id == sid)
+                             .order_by(Session.date.desc(), Session.id.desc()).limit(15).all())
+
         return render_template(
             "student_dashboard.html",
             student=student, year=year, month=month, cal=cal,
             per_day=per_day, lessons_by_date=lessons_by_date,
-            sessions=sessions,
+            sessions=sessions, payments=payments, exams=exams,
+            history_sessions=history_sessions,
             total_hours=round(total_hours, 2), total_fee=round(total_fee, 2),
             prev_year=prev.year, prev_month=prev.month,
             next_year=nextm.year, next_month=nextm.month,
@@ -633,10 +802,17 @@ def create_app():
             name = request.form.get("name", "").strip()
             rate = request.form.get("hourly_rate", "").strip()
             stage = request.form.get("stage", "其他")
+            charge_mode = request.form.get("charge_mode", CHARGE_MODE_PAY_PER_LESSON)
+            remaining_raw = request.form.get("remaining_hours", "0").strip()
+            outstanding_raw = request.form.get("outstanding_amount", "0").strip()
+            balance_raw = request.form.get("balance_amount", "0").strip()
             try:
                 rate_val = float(rate)
+                remaining_val = float(remaining_raw or 0)
+                outstanding_val = float(outstanding_raw or 0)
+                balance_val = float(balance_raw or 0)
             except Exception:
-                flash("小时费率必须是数字", "error")
+                flash("小时费率与财务字段必须是数字", "error")
                 return render_template("new_student.html", page_title="添加学生")
             if not name:
                 flash("姓名不能为空", "error")
@@ -645,7 +821,15 @@ def create_app():
             if exists:
                 flash("已存在同名学生，请更换姓名", "error")
                 return render_template("new_student.html", page_title="添加学生")
-            s = Student(name=name, hourly_rate=rate_val, stage=stage)
+            s = Student(
+                name=name,
+                hourly_rate=rate_val,
+                stage=stage,
+                charge_mode=charge_mode,
+                remaining_hours=remaining_val,
+                outstanding_amount=outstanding_val,
+                balance_amount=balance_val,
+            )
             db.session.add(s)
             db.session.commit()
             flash("学生已添加", "ok")
@@ -661,10 +845,17 @@ def create_app():
             name = request.form.get("name", "").strip()
             rate = request.form.get("hourly_rate", "").strip()
             stage = request.form.get("stage", "其他")
+            charge_mode = request.form.get("charge_mode", s.charge_mode)
+            remaining_raw = request.form.get("remaining_hours", s.remaining_hours)
+            outstanding_raw = request.form.get("outstanding_amount", s.outstanding_amount)
+            balance_raw = request.form.get("balance_amount", s.balance_amount)
             try:
                 s.hourly_rate = float(rate)
+                s.remaining_hours = float(remaining_raw or 0)
+                s.outstanding_amount = float(outstanding_raw or 0)
+                s.balance_amount = float(balance_raw or 0)
             except Exception:
-                flash("小时费率必须是数字", "error")
+                flash("小时费率与财务字段必须是数字", "error")
                 return render_template("edit_student.html", student=s, page_title="编辑学生")
             if not name:
                 flash("姓名不能为空", "error")
@@ -675,6 +866,8 @@ def create_app():
                 return render_template("edit_student.html", student=s, page_title="编辑学生")
             s.name = name
             s.stage = stage
+            if charge_mode in {c for c, _ in CHARGE_MODE_CHOICES}:
+                s.charge_mode = charge_mode
             db.session.commit()
             flash("学生信息已更新", "ok")
             return redirect(url_for("student_dashboard", sid=s.id))
@@ -700,6 +893,7 @@ def create_app():
         hours_str = request.form.get("hours")
         content = request.form.get("content", "").strip()
         feedback = request.form.get("feedback", "").strip()
+        subject = request.form.get("subject", "").strip() or "综合"
         absent = bool(request.form.get("absent"))
         try:
             d = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -709,14 +903,17 @@ def create_app():
         except Exception:
             flash("请提供正确的日期与课时（正数）", "error")
             return redirect(url_for("student_dashboard", sid=sid))
-        db.session.add(Session(
+        sess = Session(
             student_id=student.id,
             date=d,
             hours=(0 if absent else h),
             absent=absent,
             content=content,
             feedback=feedback,
-        ))
+            subject=subject,
+        )
+        db.session.add(sess)
+        refresh_session_finance(sess)
         db.session.commit()
         flash("课时记录已添加", "ok")
         return redirect(url_for("student_dashboard", sid=sid, year=d.year, month=d.month))
@@ -728,10 +925,84 @@ def create_app():
         sess = Session.query.get_or_404(sid)
         stid = sess.student_id
         y, m = sess.date.year, sess.date.month
+        _revert_finance_effect(sess.student, sess)
         db.session.delete(sess)
         db.session.commit()
         flash("记录已删除", "ok")
         return redirect(url_for("student_dashboard", sid=stid, year=y, month=m))
+
+    # ---- 缴费管理 ----
+    @app.route("/students/<int:sid>/payments", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def add_payment(sid):
+        student = Student.query.get_or_404(sid)
+        try:
+            dt = datetime.strptime(request.form.get("date", ""), "%Y-%m-%d").date()
+            amount = float(request.form.get("amount", 0))
+            if amount <= 0:
+                raise ValueError
+        except Exception:
+            flash("请输入正确的日期与金额", "error")
+            return redirect(url_for("student_dashboard", sid=sid))
+        category = request.form.get("category", CHARGE_MODE_PREPAID)
+        if category not in {CHARGE_MODE_PREPAID, "arrears_payment", "balance_topup"}:
+            category = CHARGE_MODE_PREPAID
+        record = PaymentRecord(
+            student_id=sid,
+            date=dt,
+            amount=amount,
+            method=request.form.get("method", "现金"),
+            operator=request.form.get("operator", current_user.username),
+            note=request.form.get("note", ""),
+            category=category,
+        )
+        _apply_payment_effect(student, record)
+        db.session.add(record)
+        db.session.commit()
+        flash("缴费记录已添加并更新余额/欠费", "ok")
+        return redirect(url_for("student_dashboard", sid=sid, year=dt.year, month=dt.month))
+
+    @app.route("/payments/<int:pid>/edit", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def edit_payment(pid):
+        payment = PaymentRecord.query.get_or_404(pid)
+        student = payment.student
+        if request.method == "POST":
+            try:
+                date_val = datetime.strptime(request.form.get("date", ""), "%Y-%m-%d").date()
+                amount = float(request.form.get("amount", 0))
+                if amount <= 0:
+                    raise ValueError
+            except Exception:
+                flash("请输入正确的日期与金额", "error")
+                return render_template("edit_payment.html", payment=payment, page_title="编辑缴费")
+            _revert_payment_effect(student, payment)
+            payment.date = date_val
+            payment.amount = amount
+            payment.method = request.form.get("method", payment.method)
+            payment.operator = request.form.get("operator", payment.operator)
+            payment.note = request.form.get("note", payment.note)
+            category = request.form.get("category", payment.category)
+            payment.category = category
+            _apply_payment_effect(student, payment)
+            db.session.commit()
+            flash("缴费记录已更新", "ok")
+            return redirect(url_for("student_dashboard", sid=student.id, year=payment.date.year, month=payment.date.month))
+        return render_template("edit_payment.html", payment=payment, page_title="编辑缴费")
+
+    @app.route("/payments/<int:pid>/delete", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def delete_payment(pid):
+        payment = PaymentRecord.query.get_or_404(pid)
+        sid = payment.student_id
+        _revert_payment_effect(payment.student, payment)
+        db.session.delete(payment)
+        db.session.commit()
+        flash("缴费记录已删除", "ok")
+        return redirect(url_for("student_dashboard", sid=sid))
 
     @app.route("/sessions/<int:sid>/edit", methods=["GET", "POST"])
     @login_required
@@ -747,6 +1018,7 @@ def create_app():
             absent = bool(request.form.get("absent"))
             content = request.form.get("content", "").strip()
             feedback = request.form.get("feedback", "").strip()
+            subject = request.form.get("subject", "").strip() or sess.subject or "综合"
             try:
                 h = float(hours_raw or 0)
                 if h <= 0 and not absent:
@@ -754,14 +1026,73 @@ def create_app():
             except Exception:
                 flash("课时需为正数", "error")
                 return render_template("edit_session.html", session=sess, student=student, page_title="编辑课时")
+            _revert_finance_effect(student, sess)
             sess.hours = 0 if absent else h
             sess.absent = absent
             sess.content = content
             sess.feedback = feedback
+            sess.subject = subject
+            refresh_session_finance(sess)
             db.session.commit()
             flash("课时记录已更新", "ok")
             return redirect(url_for("student_dashboard", sid=student.id, year=sess.date.year, month=sess.date.month))
         return render_template("edit_session.html", session=sess, student=student, page_title="编辑课时")
+
+    # ---- 成绩管理 ----
+    @app.route("/students/<int:sid>/exams", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def add_exam(sid):
+        student = Student.query.get_or_404(sid)
+        try:
+            exam_date = datetime.strptime(request.form.get("exam_date", ""), "%Y-%m-%d").date()
+            score = float(request.form.get("score", 0))
+        except Exception:
+            flash("请正确填写考试日期和分数", "error")
+            return redirect(url_for("student_dashboard", sid=sid))
+        exam = ExamRecord(
+            student_id=sid,
+            exam_date=exam_date,
+            name=request.form.get("name", "").strip() or "未命名考试",
+            score=score,
+            essay_score=request.form.get("essay_score", type=float),
+        )
+        db.session.add(exam)
+        db.session.commit()
+        flash("考试成绩已记录", "ok")
+        return redirect(url_for("student_dashboard", sid=sid))
+
+    @app.route("/exams/<int:eid>/edit", methods=["GET", "POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def edit_exam(eid):
+        exam = ExamRecord.query.get_or_404(eid)
+        if request.method == "POST":
+            try:
+                exam_date = datetime.strptime(request.form.get("exam_date", ""), "%Y-%m-%d").date()
+                score = float(request.form.get("score", 0))
+            except Exception:
+                flash("请正确填写考试日期和分数", "error")
+                return render_template("edit_exam.html", exam=exam, page_title="编辑考试")
+            exam.exam_date = exam_date
+            exam.name = request.form.get("name", exam.name).strip()
+            exam.score = score
+            exam.essay_score = request.form.get("essay_score", type=float)
+            db.session.commit()
+            flash("考试记录已更新", "ok")
+            return redirect(url_for("student_dashboard", sid=exam.student_id))
+        return render_template("edit_exam.html", exam=exam, page_title="编辑考试")
+
+    @app.route("/exams/<int:eid>/delete", methods=["POST"])
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def delete_exam(eid):
+        exam = ExamRecord.query.get_or_404(eid)
+        sid = exam.student_id
+        db.session.delete(exam)
+        db.session.commit()
+        flash("考试成绩已删除", "ok")
+        return redirect(url_for("student_dashboard", sid=sid))
 
     # ---- 课程表 Lesson（需登录） ----
     @app.route("/lessons/add", methods=["POST"])
@@ -982,6 +1313,106 @@ def create_app():
                 "end": ce.strftime("%H:%M")
             })
         return jsonify({"ok": True, "conflicts": items})
+
+    # ---- 报表统计 ----
+    @app.route("/reports")
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def reports():
+        scope = request.args.get("scope", "month")
+        today = date.today()
+        if scope == "day":
+            start = request.args.get("date", today.isoformat())
+            try:
+                start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            except Exception:
+                start_date = today
+            start_range = start_date
+            end_range = start_date + timedelta(days=1)
+        elif scope == "year":
+            y = request.args.get("year", today.year, type=int)
+            start_range = date(y, 1, 1)
+            end_range = date(y + 1, 1, 1)
+        else:
+            y, m = _get_year_month()
+            start_range, end_range = month_bounds(y, m)
+        sessions = (Session.query.join(Student)
+                    .filter(Session.date >= start_range, Session.date < end_range)
+                    .order_by(Session.date.asc()).all())
+        total_hours = sum(s.hours for s in sessions)
+        total_income = sum((s.charged_amount if s.charged_amount else s.hours * s.student.hourly_rate) for s in sessions)
+        subject_stats = {}
+        for s in sessions:
+            bucket = subject_stats.setdefault(s.subject or "未分类", {"hours": 0.0, "income": 0.0})
+            bucket["hours"] += s.hours
+            bucket["income"] += s.charged_amount if s.charged_amount else s.hours * s.student.hourly_rate
+        total_count = len(sessions)
+        attendance_rate = 0.0
+        if total_count:
+            present = len([s for s in sessions if not s.absent])
+            attendance_rate = present / total_count
+        income_by_student = {}
+        for s in sessions:
+            income_by_student.setdefault(s.student.name, 0.0)
+            income_by_student[s.student.name] += s.charged_amount if s.charged_amount else s.hours * s.student.hourly_rate
+        payments_sum = (PaymentRecord.query
+                        .filter(PaymentRecord.date >= start_range, PaymentRecord.date < end_range)
+                        .with_entities(db.func.sum(PaymentRecord.amount)).scalar() or 0.0)
+        return render_template(
+            "reports.html",
+            scope=scope,
+            start=start_range,
+            end=end_range - timedelta(days=1),
+            total_hours=total_hours,
+            total_income=total_income,
+            subject_stats=subject_stats,
+            attendance_rate=attendance_rate,
+            income_by_student=income_by_student,
+            payments_sum=payments_sum,
+            page_title="统计报表",
+        )
+
+    @app.route("/reports/export")
+    @login_required
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    def export_reports():
+        scope = request.args.get("scope", "month")
+        today = date.today()
+        if scope == "day":
+            start_date = request.args.get("date", today.isoformat())
+            try:
+                start_range = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except Exception:
+                start_range = today
+            end_range = start_range + timedelta(days=1)
+        elif scope == "year":
+            y = request.args.get("year", today.year, type=int)
+            start_range = date(y, 1, 1)
+            end_range = date(y + 1, 1, 1)
+        else:
+            y, m = _get_year_month()
+            start_range, end_range = month_bounds(y, m)
+        sessions = (Session.query.join(Student)
+                    .filter(Session.date >= start_range, Session.date < end_range)
+                    .order_by(Session.date.asc()).all())
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        header = ["学生", "日期", "科目", "课时", "费用", "授课内容", "反馈"]
+        writer.writerow(header)
+        for s in sessions:
+            fee = s.charged_amount if s.charged_amount else s.hours * s.student.hourly_rate
+            writer.writerow([
+                s.student.name if s.student else "",
+                s.date.isoformat(),
+                s.subject,
+                f"{s.hours:.2f}",
+                f"{fee:.2f}",
+                s.content,
+                s.feedback or "",
+            ])
+        resp = Response(buf.getvalue(), mimetype="text/csv")
+        resp.headers["Content-Disposition"] = "attachment; filename=report.csv"
+        return resp
         
     return app
 

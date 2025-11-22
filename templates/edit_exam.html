@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑考试成绩</h2>
+<form method="post" action="{{ url_for('edit_exam', eid=exam.id) }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>考试日期
+    <input type="date" name="exam_date" value="{{ exam.exam_date }}" required>
+  </label>
+  <label>考试名称
+    <input type="text" name="name" value="{{ exam.name }}" required>
+  </label>
+  <label>分数
+    <input type="number" step="0.1" name="score" value="{{ exam.score }}" required>
+  </label>
+  <label>作文分数
+    <input type="number" step="0.1" name="essay_score" value="{{ exam.essay_score }}">
+  </label>
+  <div class="row">
+    <button type="submit">保存</button>
+    <a class="btn" href="{{ url_for('student_dashboard', sid=exam.student_id) }}">返回</a>
+  </div>
+</form>
+{% endblock %}
