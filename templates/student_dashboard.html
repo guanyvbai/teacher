@@ -185,51 +185,109 @@
 
   <h4>成绩趋势</h4>
   {% if exam_chart_points %}
-    <canvas id="examChart" height="200" aria-label="成绩趋势折线图"></canvas>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha256-viPp5D2b3iLkVg8C9Wj5Sk6b1oa6KjJuTD6TYZkm52Y=" crossorigin="anonymous"></script>
+    <canvas id="examChart" height="220" aria-label="成绩趋势折线图"></canvas>
     <script>
       (function() {
         const data = {{ exam_chart_points | tojson }};
-        const ctx = document.getElementById('examChart');
-        if (!ctx || !data.length) return;
+        const canvas = document.getElementById('examChart');
+        if (!canvas || !data.length) return;
+
+        // 计算容器宽度，保证在表格下方自适应
+        const parentWidth = canvas.parentElement?.clientWidth || 640;
+        canvas.width = parentWidth;
+        const ctx = canvas.getContext('2d');
+
         const labels = data.map(i => i.date);
-        const scores = data.map(i => i.score);
-        const essayScores = data.map(i => i.essay_score);
-        new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [
-              {
-                label: '总分',
-                data: scores,
-                tension: 0.3,
-                borderColor: '#2563eb',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                pointRadius: 3,
-              },
-              {
-                label: '作文分',
-                data: essayScores,
-                tension: 0.3,
-                borderColor: '#f97316',
-                backgroundColor: 'rgba(249, 115, 22, 0.1)',
-                pointRadius: 3,
-                spanGaps: true,
-              }
-            ],
-          },
-          options: {
-            plugins: {
-              legend: { display: true },
-              tooltip: { mode: 'index', intersect: false },
-            },
-            interaction: { mode: 'nearest', intersect: false },
-            scales: {
-              y: { beginAtZero: true, title: { display: true, text: '分数' } },
-              x: { title: { display: true, text: '考试日期' } },
-            },
+        const series = [
+          { key: 'score', label: '总分', color: '#2563eb' },
+          { key: 'essay_score', label: '作文分', color: '#f97316' },
+        ];
+
+        const allValues = data.flatMap(i => series.map(s => i[s.key]).filter(v => typeof v === 'number'));
+        const maxVal = Math.max(100, ...allValues);
+        const minVal = Math.min(0, ...allValues, 0);
+        const chartHeight = canvas.height - 50;
+        const chartWidth = canvas.width - 80;
+        const left = 50;
+        const bottom = canvas.height - 30;
+
+        const yFor = (v) => {
+          const range = maxVal - minVal || 1;
+          return bottom - ((v - minVal) / range) * chartHeight;
+        };
+
+        const xForIndex = (idx) => {
+          if (labels.length === 1) return left + chartWidth / 2;
+          const step = chartWidth / (labels.length - 1);
+          return left + step * idx;
+        };
+
+        const drawGrid = () => {
+          ctx.strokeStyle = '#e5e7eb';
+          ctx.fillStyle = '#6b7280';
+          ctx.lineWidth = 1;
+          const rows = 4;
+          for (let i = 0; i <= rows; i++) {
+            const v = minVal + (maxVal - minVal) * (i / rows);
+            const y = yFor(v);
+            ctx.beginPath();
+            ctx.moveTo(left, y);
+            ctx.lineTo(left + chartWidth, y);
+            ctx.stroke();
+            ctx.fillText(Math.round(v), 5, y + 4);
           }
+
+          labels.forEach((lbl, idx) => {
+            const x = xForIndex(idx);
+            ctx.fillText(lbl, x - 30, bottom + 14);
+          });
+        };
+
+        const drawLine = (values, color) => {
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+          ctx.lineWidth = 2;
+          let started = false;
+          values.forEach((v, idx) => {
+            if (typeof v !== 'number') return;
+            const x = xForIndex(idx);
+            const y = yFor(v);
+            if (!started) {
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              started = true;
+            } else {
+              ctx.lineTo(x, y);
+            }
+          });
+          if (started) ctx.stroke();
+
+          values.forEach((v, idx) => {
+            if (typeof v !== 'number') return;
+            const x = xForIndex(idx);
+            const y = yFor(v);
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        };
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '12px sans-serif';
+        drawGrid();
+        series.forEach(s => {
+          const values = data.map(i => i[s.key]);
+          drawLine(values, s.color);
+        });
+
+        // 简易图例
+        const legendY = 16;
+        series.forEach((s, idx) => {
+          const x = left + idx * 100;
+          ctx.fillStyle = s.color;
+          ctx.fillRect(x, legendY - 8, 14, 6);
+          ctx.fillStyle = '#111827';
+          ctx.fillText(s.label, x + 20, legendY);
         });
       })();
     </script>
