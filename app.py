@@ -175,7 +175,7 @@ def lesson_overlaps_any(start_at: datetime, duration_hours: float, exclude_lid: 
 def _permissions(user):
     role = getattr(user, "role", None)
     can_schedule = role in {ROLE_SUPERADMIN, ROLE_TEACHER}
-    can_manage_students = role in {ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN}
+    can_manage_students = role in {ROLE_SUPERADMIN, ROLE_TEACHER}
     can_manage_users = role == ROLE_SUPERADMIN
     can_sessions = role in {ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN}
     readonly = role == ROLE_VIEWER
@@ -815,11 +815,21 @@ def create_app():
         history_sessions = (Session.query.filter(Session.student_id == sid)
                              .order_by(Session.date.desc(), Session.id.desc()).limit(15).all())
 
+        exam_chart_points = [
+            {
+                "date": e.exam_date.strftime("%Y-%m-%d"),
+                "score": e.score,
+                "essay_score": e.essay_score,
+            }
+            for e in sorted(exams, key=lambda i: i.exam_date)
+        ]
+
         return render_template(
             "student_dashboard.html",
             student=student, year=year, month=month, cal=cal,
             per_day=per_day, lessons_by_date=lessons_by_date,
             sessions=sessions, payments=payments, exams=exams,
+            exam_chart_points=exam_chart_points,
             history_sessions=history_sessions,
             total_hours=round(total_hours, 2), total_fee=round(total_fee, 2),
             prev_year=prev.year, prev_month=prev.month,
@@ -839,7 +849,7 @@ def create_app():
 
     @app.route("/students/new", methods=["GET", "POST"])
     @login_required
-    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def new_student():
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -881,7 +891,7 @@ def create_app():
 
     @app.route("/students/<int:sid>/edit", methods=["GET", "POST"])
     @login_required
-    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def edit_student(sid):
         s = Student.query.get_or_404(sid)
         if request.method == "POST":
@@ -918,7 +928,7 @@ def create_app():
 
     @app.route("/students/<int:sid>/delete", methods=["POST"])
     @login_required
-    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER, ROLE_ADMIN)
+    @role_required(ROLE_SUPERADMIN, ROLE_TEACHER)
     def delete_student(sid):
         s = Student.query.get_or_404(sid)
         db.session.delete(s)

@@ -183,6 +183,60 @@
   </form>
   {% endif %}
 
+  <h4>成绩趋势</h4>
+  {% if exam_chart_points %}
+    <canvas id="examChart" height="200" aria-label="成绩趋势折线图"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha256-viPp5D2b3iLkVg8C9Wj5Sk6b1oa6KjJuTD6TYZkm52Y=" crossorigin="anonymous"></script>
+    <script>
+      (function() {
+        const data = {{ exam_chart_points | tojson }};
+        const ctx = document.getElementById('examChart');
+        if (!ctx || !data.length) return;
+        const labels = data.map(i => i.date);
+        const scores = data.map(i => i.score);
+        const essayScores = data.map(i => i.essay_score);
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: '总分',
+                data: scores,
+                tension: 0.3,
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                pointRadius: 3,
+              },
+              {
+                label: '作文分',
+                data: essayScores,
+                tension: 0.3,
+                borderColor: '#f97316',
+                backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                pointRadius: 3,
+                spanGaps: true,
+              }
+            ],
+          },
+          options: {
+            plugins: {
+              legend: { display: true },
+              tooltip: { mode: 'index', intersect: false },
+            },
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+              y: { beginAtZero: true, title: { display: true, text: '分数' } },
+              x: { title: { display: true, text: '考试日期' } },
+            },
+          }
+        });
+      })();
+    </script>
+  {% else %}
+    <p class="muted">暂无成绩曲线，录入成绩后将自动生成折线图。</p>
+  {% endif %}
+
   {% if not PERMS.readonly %}
   <h3>缴费记录</h3>
   <table class="table">
