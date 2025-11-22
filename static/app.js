@@ -3,6 +3,7 @@
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
     const CSRF = (window.PAGE && window.PAGE.csrfToken) || '';
     const CAN_SCHEDULE = !!(window.PAGE && window.PAGE.canSchedule);
+    const stack = createToastStack();
   
     function openModal(dateStr) {
       const modal = $('#dayModal');
@@ -74,16 +75,16 @@
           if (CAN_SCHEDULE) {
             actions = `<div class="ti-actions" style="margin-top:.25rem">` +
               `${item.status === 'planned' ? `
-                <form method="post" action="/lessons/${item.id}/done" style="display:inline">
+                <form method="post" action="/lessons/${item.id}/done" style="display:inline" data-confirm="确认标记为已完成？">
                   <input type="hidden" name="csrf_token" value="${CSRF}">
                   <button type="submit" class="btn small">完成</button>
                 </form>` : ''}` +
               `${item.status === 'planned' ? `
-                <form method="post" action="/lessons/${item.id}/cancel" style="display:inline">
+                <form method="post" action="/lessons/${item.id}/cancel" style="display:inline" data-confirm="确定要取消这节课吗？">
                   <input type="hidden" name="csrf_token" value="${CSRF}">
                   <button type="submit" class="btn small">取消</button>
                 </form>` : ''}` +
-              `<form method="post" action="/lessons/${item.id}/delete" style="display:inline" onsubmit="return confirm('删除这条排课？');">
+              `<form method="post" action="/lessons/${item.id}/delete" style="display:inline" data-confirm="删除这条排课？">
                 <input type="hidden" name="csrf_token" value="${CSRF}">
                 <button type="submit" class="danger small">删除</button>
               </form>` +
@@ -122,7 +123,38 @@
       bindCalendarClicks();
       bindModalClose();
       bindLessonFormGuard();
+      bindConfirmations();
+      hydrateFlashToasts();
+      bindSidebarToggle();
     });
+
+    function bindSidebarToggle() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      const backdrop = document.querySelector('.sidebar-backdrop');
+      if (!sidebar || !toggle || !backdrop) return;
+
+      const close = () => {
+        sidebar.classList.remove('open');
+        backdrop.classList.add('hidden');
+        toggle.setAttribute('aria-expanded', 'false');
+      };
+      const open = () => {
+        sidebar.classList.add('open');
+        backdrop.classList.remove('hidden');
+        toggle.setAttribute('aria-expanded', 'true');
+      };
+
+      toggle.addEventListener('click', () => {
+        if (sidebar.classList.contains('open')) {
+          close();
+        } else {
+          open();
+        }
+      });
+
+      backdrop.addEventListener('click', close);
+    }
     function bindLessonFormGuard() {
       const form = document.getElementById('lessonForm');
       if (!form || !CAN_SCHEDULE) return;
@@ -158,6 +190,47 @@
           }
         }
       }, { capture: true });
+    }
+
+    function bindConfirmations() {
+      document.body.addEventListener('submit', (e) => {
+        const target = e.target;
+        if (target && target.matches('form[data-confirm]')) {
+          const msg = target.getAttribute('data-confirm');
+          if (msg && !window.confirm(msg)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
+      }, true);
+
+      document.body.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-confirm-click]');
+        if (btn) {
+          const msg = btn.getAttribute('data-confirm-click');
+          if (msg && !window.confirm(msg)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
+      }, true);
+    }
+
+    function hydrateFlashToasts() {
+      $$('.flash-item').forEach(node => {
+        const toast = document.createElement('div');
+        toast.className = `toast ${node.classList.contains('error') ? 'error' : (node.classList.contains('ok') ? 'ok' : '')}`;
+        toast.textContent = node.textContent.trim();
+        stack.appendChild(toast);
+        setTimeout(() => toast.remove(), 4200);
+      });
+    }
+
+    function createToastStack() {
+      const el = document.createElement('div');
+      el.className = 'toast-stack';
+      document.body.appendChild(el);
+      return el;
     }
   })();
   

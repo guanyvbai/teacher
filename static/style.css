@@ -14,9 +14,11 @@ body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI"
 a{color:var(--accent);text-decoration:none}
 
 .app{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+.topbar-left{display:flex;align-items:center;gap:.5rem}
+.icon-btn{display:none;align-items:center;justify-content:center;width:38px;height:38px;border-radius:.6rem;border:1px solid var(--border);background:var(--card);cursor:pointer}
 
 /* Sidebar */
-.sidebar{background:var(--sidebar);color:#e2e8f0;padding:1rem;display:flex;flex-direction:column}
+.sidebar{background:var(--sidebar);color:#e2e8f0;padding:1rem;display:flex;flex-direction:column;z-index:45}
 .brand{display:flex;align-items:center;gap:.6rem;margin-bottom:1rem}
 .logo{width:36px;height:36px;border-radius:.75rem;background:#1f2937;display:flex;align-items:center;justify-content:center;font-size:20px}
 .brand-name{font-weight:700}
@@ -40,6 +42,10 @@ a{color:var(--accent);text-decoration:none}
 .flash-item{padding:.6rem .8rem;border-radius:.6rem;margin-bottom:.4rem;background:#eef6ff;border:1px solid #dbeaff}
 .flash-item.error{background:#fff4f4;border-color:#ffdcdc;color:var(--danger)}
 .flash-item.ok{background:#f0fff4;border-color:#d2f4dc;color:#1e7a37}
+.toast-stack{position:fixed;right:1rem;bottom:1rem;display:flex;flex-direction:column;gap:.5rem;z-index:60}
+.toast{padding:.7rem .9rem;border-radius:.75rem;border:1px solid var(--border);background:rgba(255,255,255,.95);box-shadow:0 10px 25px rgba(0,0,0,.1);min-width:240px}
+.toast.ok{border-color:#d2f4dc;background:#f0fff4}
+.toast.error{border-color:#ffdcdc;background:#fff5f5;color:var(--danger)}
 
 /* Cards */
 .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:.5rem 0 1rem}
@@ -57,6 +63,21 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .form.inline{display:flex;gap:1rem;align-items:flex-end}
 .row{display:flex;gap:1rem;align-items:center}
 
+/* mobile layout */
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .sidebar{position:fixed;inset:0 auto 0 -270px;width:260px;transition:all .25s ease;box-shadow:6px 0 20px rgba(0,0,0,.2)}
+  .sidebar.open{left:0}
+  .sidebar-backdrop{display:block}
+  .icon-btn{display:flex}
+  .topbar{position:sticky;top:0;z-index:30;background:var(--bg)}
+  .row{flex-wrap:wrap}
+  .cards{grid-template-columns:1fr}
+}
+
+.sidebar-backdrop{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.35);backdrop-filter:blur(2px)}
+.sidebar-backdrop.hidden{display:none}
+
 /* Table */
 .table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:1rem;overflow:hidden}
 .table th,.table td{padding:.7rem .8rem;border-bottom:1px solid var(--border);text-align:left}
@@ -64,8 +85,15 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .muted{color:var(--muted)} .small{font-size:.85rem}
 .form select{padding:.5rem .6rem;border:1px solid var(--border);border-radius:.5rem;width:100%;background:var(--card)}
 /* Calendar */
-.calendar-header{display:flex;align-items:center;justify-content:space-between;margin:.4rem 0}
-.calendar{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:.6rem}
+.calendar-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin:.2rem 0 .5rem}
+.calendar-title{font-weight:700}
+.calendar-sub{color:var(--muted);font-size:.9rem;margin-top:.15rem}
+.calendar-legend{display:flex;align-items:center;gap:.6rem;font-size:.85rem;color:var(--muted);flex-wrap:wrap}
+.legend-item{display:inline-flex;align-items:center;gap:.35rem}
+.legend-item .legend-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}
+.legend-item.done .legend-dot{background:#1e7a37}
+.legend-item.cancelled .legend-dot{background:#94a3b8}
+.calendar{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:.6rem;overflow-x:auto}
 .calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.5rem}
 .cal-head{font-size:.85rem;color:var(--muted);text-align:center}
 .cal-cell{border:1px solid var(--border);border-radius:.8rem;padding:.4rem;height:95px;display:flex;flex-direction:column}
@@ -74,8 +102,7 @@ button.danger{background:#fff5f5;border-color:#ffdcdc;color:var(--danger)}
 .cal-fee{margin-top:auto;font-weight:700;color:var(--accent)}
 .muted-bg{background:#f8fafc;color:#94a3b8}
 @media (max-width: 1000px){
-  .cards{grid-template-columns:1fr}
-  .calendar-grid{gap:.35rem}
+  .calendar-grid{gap:.35rem;min-width:720px}
   .cal-cell{height:80px}
 }
 

@@ -1,4 +1,15 @@
 <div class="calendar">
+    <div class="calendar-header">
+      <div>
+        <div class="calendar-title">{{ year }} 年 {{ '%02d'|format(month) }} 月课程表</div>
+        <div class="calendar-sub">点击日期查看当天课程，长列表可左右滑动</div>
+      </div>
+      <div class="calendar-legend">
+        <span class="legend-item"><span class="legend-dot"></span> 未上课</span>
+        <span class="legend-item done"><span class="legend-dot"></span> 已完成</span>
+        <span class="legend-item cancelled"><span class="legend-dot"></span> 已取消</span>
+      </div>
+    </div>
     <div class="calendar-grid">
       <div class="cal-head">周一</div>
       <div class="cal-head">周二</div>

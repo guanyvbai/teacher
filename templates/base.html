@@ -44,7 +44,12 @@
 
   <main class="main" {% if student is defined %} data-student-id="{{ student.id }}"{% endif %}>
     <header class="topbar">
-      <div class="title">{{ page_title or "学习统计" }}</div>
+      <div class="topbar-left">
+        <button class="icon-btn sidebar-toggle" type="button" aria-label="展开菜单" aria-expanded="false">
+          ☰
+        </button>
+        <div class="title">{{ page_title or "学习统计" }}</div>
+      </div>
       <div class="topbar-actions">
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -67,6 +72,8 @@
       {% block content %}{% endblock %}
     </section>
   </main>
+
+  <div class="sidebar-backdrop hidden" data-close-sidebar></div>
 
   <!-- 日历点击弹层 -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
